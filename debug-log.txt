@@ -1,0 +1,18 @@
+=== where git ===
+C:\Program Files\Git\cmd\git.exe
+=== where npm ===
+C:\Program Files\nodejs\npm
+C:\Program Files\nodejs\npm.cmd
+=== node --version ===
+v24.20.0
+=== npm --version ===
+11.19.0
+=== npm install ===
+
+up to date, audited 34 packages in 894ms
+
+4 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+NPM_INSTALL_EXIT=0
