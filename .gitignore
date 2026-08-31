@@ -2,3 +2,6 @@ node_modules/
 .DS_Store
 
 server.json
+content/
+engine/
+javaclient/
