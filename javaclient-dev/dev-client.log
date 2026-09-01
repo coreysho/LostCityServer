@@ -1,0 +1,47 @@
+
+=== dev client session started Tue Sep 01 13:36:55 EDT 2026 ===
+[13:36:55.127] [SESSION] === DEV CLIENT === logging every menu action, chat message, and login/logout to console + dev-client.log
+
+=== dev client session started Tue Sep 01 13:37:42 EDT 2026 ===
+[13:37:42.037] [SESSION] === DEV CLIENT === logging every menu action, chat message, and login/logout to console + dev-client.log
+[13:37:51.037] [SESSION] logged in as "corey"
+[13:37:51.713] [CHAT] type=0 from="" msg="Welcome to RuneScape."
+[13:37:53.635] [ACTION] Close
+[13:37:55.475] [ACTION] Mine Rocks
+[13:37:55.847] [CHAT] type=0 from="" msg="Nothing interesting happens."
+[13:37:59.330] [ACTION] Mine Rocks
+[13:37:59.392] [CHAT] type=0 from="" msg="Nothing interesting happens."
+[13:38:00.199] [ACTION] Mine Rocks
+[13:38:00.603] [CHAT] type=0 from="" msg="Nothing interesting happens."
+[13:38:01.151] [ACTION] Mine Rocks
+[13:38:01.194] [CHAT] type=0 from="" msg="Nothing interesting happens."
+[13:38:02.828] [ACTION] Prospect Rocks
+[13:38:02.995] [CHAT] type=0 from="" msg="Nothing interesting happens."
+[13:38:19.214] [ACTION] Cancel
+[13:38:20.280] [ACTION] Ok
+[13:38:20.405] [SESSION] logged out, was "corey"
+
+=== dev client session started Tue Sep 01 13:45:11 EDT 2026 ===
+[13:45:11.418] [SESSION] === DEV CLIENT === logging every menu action, chat message, and login/logout to console + dev-client.log
+[13:45:21.085] [SESSION] logged in as "corey"
+[13:45:21.424] [CHAT] type=0 from="" msg="Welcome to RuneScape."
+[13:45:23.335] [ACTION] Close | player=(3059,3884,0) | target=? action=639 paramA=0 paramB=0 paramC=15251
+[13:45:24.517] [ACTION] Mine Rocks | player=(3059,3884,0) | target=loc id=14860 name="Rocks" coords=(3060,3884,0)
+[13:45:24.575] [CHAT] type=0 from="" msg="Nothing interesting happens."
+[13:45:32.530] [ACTION] Mine Rocks | player=(3059,3884,0) | target=loc id=14859 name="Rocks" coords=(3059,3885,0)
+[13:45:32.985] [CHAT] type=0 from="" msg="Nothing interesting happens."
+[13:47:32.995] [ACTION] Use Uncut diamond | player=(3059,3884,0) | target=? action=52 paramA=1617 paramB=18 paramC=3214
+[13:47:36.333] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[13:47:44.171] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[13:47:49.572] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[13:54:15.209] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[13:54:16.507] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[13:54:17.395] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[13:54:18.197] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[13:54:18.849] [ACTION] View Combat guide | player=(3059,3884,0) | target=? action=352 paramA=995 paramB=13 paramC=8654
+[13:54:19.161] [CHAT] type=0 from="" msg="No trigger for [if_button,stats:com_68]"
+[13:54:21.116] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[14:06:43.197] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[14:06:44.574] [CHAT] type=2 from="@cr2@Corey" msg="Fghfgg"
+[14:07:01.881] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
+[14:07:02.623] [ACTION] Cancel | player=(3059,3884,0) | target=? action=1016 paramA=0 paramB=0 paramC=0
