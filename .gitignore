@@ -5,3 +5,5 @@ server.json
 content/
 engine/
 javaclient/
+Client-Java/
+Engine-TS/
