@@ -1,0 +1,21 @@
+Fix unquoted comma in the jubbly cooking dbrow
+
+Pack error: "Data invalid in row, double-check the reference exists" on
+data=cantcookmessage_range - which reads like a missing symbol and was
+nothing of the kind. .dbrow splits fields on commas, and I put one inside
+a prose string, so the parser took " not a range." as an extra column.
+
+Reworded to avoid the comma. The other option, which levelup.dbrow uses
+throughout, is to quote the whole string:
+
+    data=message,"Congratulations, you just advanced an attack level."
+
+Checked every prose field in cooking_generic.dbrow and repo-wide for the
+same thing; this was the only one.
+
+Added to claude/rs2-compile-traps.md as trap 8 and battery item 13, with
+the note that 12 and 13 are both config-format problems the .rs2 battery
+cannot see - and both cost a build in this same quest.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

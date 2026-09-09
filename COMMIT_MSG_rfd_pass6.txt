@@ -1,0 +1,26 @@
+Recipe for Disaster: Freeing Sir Amik Varze (pass 6 of ~11)
+
+The doc had this one down as "no named dish obj". That was wrong - the
+dish is named, it just does not say "Varze" in it:
+
+    [hundred_fruit_blast]
+    name=Dirty blast
+    desc=A cool refreshing fruit mix. With ash in for some reason.
+
+A Fruit Blast with ashes stirred through it. Both halves are ordinary objs
+the repo already produces - the gnome cocktail system makes fruit_blast
+and ashes come off any fire - so nothing here is invented. The only thing
+the data left open was who tells you, and the answer is the man himself:
+the ordinary sir_amik_varze at 2_46_52_16_8 in Falador castle, whose
+existing [opnpc1] this hooks into rather than redeclaring.
+
+The shortest of the ten by a distance, and it carries no stage varbit.
+Every other sub-quest has one; this one has only 100amikvisible, a single
+bit. Rather than carve a stage out of 100intro's three spare bits (8-10)
+for the sake of symmetry, it reads off what the player is holding - there
+is no step here that can be half-done.
+
+Not compiled and not playtested.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

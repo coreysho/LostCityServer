@@ -1,0 +1,44 @@
+Recipe for Disaster: Freeing the Goblin generals (pass 7 of ~11)
+
+Second correction in two passes: this quest's dish IS named too. The
+prefix is 100goblin_ with no underscore after the 100, which is why it
+never turned up under 100_ or hundred_:
+
+    100goblin_compromise_mush  "Slop of compromise - Two out of two
+                                goblin generals prefer it!"
+    100goblin_soggy_bread      "Previously a nice crispy loaf of bread.
+                                Now just kind of icky."
+    100goblin_spicey_maggots   "They clearly taste so much better this way!"
+    100goblin_dyed_oranges     "Orange slices which have been dyed, but it
+                                looks more like they died."
+
+Three things neither general will give up, mashed into one bowl. Every
+input is an ordinary obj the repo already produces: bread, a bucket of
+water, fishing bait, spice (which hundred_foodchest1 stocks), orange
+slices from the gnome cocktail set, and any of Aggie's dyes.
+
+The kitchen is under Goblin Village and the cache built it twice, the way
+it built the dining room twice: intact at m46_154 p0 z50-62 with the
+cauldron at (36,54), and a blasted copy at z15-22 with its own charred
+ladder. Every fitting in the room has a _blasted or _charred twin.
+
+The cauldron says what happens without being told - "The bottom of this
+cauldron is suprisingly blackened, even for a cauldron" -> "I don't think
+Cauldrons are supposed to bounce around like that" -> "Explosion - This
+could be considered to be a bad thing!" - and 100goblin_explosion then
+blows the roof off the hut above, in the village.
+
+Shared triggers extended rather than duplicated: [opheldu,bucket_water],
+[opheldu,spicespot], [opheldu,orange_slices] (which forwarded everything
+to the cocktail system, so the dyes are checked before that fall-through),
+the four dyes in dye_cape.rs2, and both generals' existing [opnpc1].
+
+Caught by the battery before delivery, not by the compiler: an @label
+inside [proc,hundred_goblin_chat] - trap 5b again, and the check added
+after Mourning's End is what found it - and a sound_synth naming a synth
+that does not exist.
+
+Not compiled and not playtested.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

@@ -1,0 +1,22 @@
+Fix double carriage returns in quest_100.constant
+
+Build error: "Bad constant declaration on line:" with nothing after it -
+the line it could not parse was one whose terminator had become \r\r\n.
+
+Cause: I appended to quest_100.constant with a heredoc (LF) and then ran
+sed 's/$/\r/' over the WHOLE file to convert to CRLF, twice. Every line
+that was already CRLF gained a second CR each time. The .rs2 compiler
+tolerates it; the .constant parser does not.
+
+The file is normalised to exactly one CRLF per line. Swept the rest of
+content/scripts and content/pack for the same thing: one other file,
+skill_slayer/scripts/slayer_guide.rs2, had it from the skill-guide work
+earlier today - fixed here too, though it was compiling fine.
+
+Rule for next time: when appending to a CRLF file, write the new text
+with explicit \r\n, or normalise the whole file once with
+s.replace('\r','').replace('\n','\r\n'). Never re-run a line-ending sed
+over a file that already has them.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

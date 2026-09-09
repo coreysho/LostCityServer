@@ -1,0 +1,44 @@
+Recipe for Disaster: Freeing King Awowogei (pass 4 of ~11)
+
+Every step is on or under Ape Atoll, so this one needs Monkey Madness -
+nothing checks for it, because Ape Atoll's own gates already do.
+
+The dish is named by the objs and needed no guessing: snake corpse +
+sliced red banana + Tchiki nut paste -> "Raw stuffed snake" -> cook ->
+"Stuffed snake / Fit for a Monkey King".
+
+The three wise monkeys - Mizaru sees no evil, Kikazaru hears no evil,
+Iwazaru speaks no evil - stand side by side at 0_43_43_35_43/36_43/37_43
+and hold a third of the recipe each. All three had op1=Talk-to and no
+handler.
+
+The banana tree at 0_42_43_8_33 is a multiloc whose state 2 carries
+anim=100_ilm_banana_tree_pull_down and no ops. That is the mechanic
+stated in the data: the red ones grow at the crown, out of reach, and you
+haul the crown down to get at them. Nothing in the cache reddens an
+ordinary banana and nothing needed to.
+
+Fixed on the way: hundred_ilm_snake ("Big Snake", level 84, three of them
+in the pit at m47_85) had op2=Attack and full combat stats but NO
+death_drop, so the one thing the sub-quest needs it for could not be
+obtained. hundred_ilm_snake_corpse exists and nothing else drops or gives
+it.
+
+Also new: a cooking_generic dbrow for the stuffed snake. All three objs
+were shipped but nothing had ever made the raw one cookable, so the last
+step of the sub-quest had no way to happen. Adding the row is all it
+needed - no new trigger.
+
+NOT used, and recorded rather than forced: hundred_ilm_incorrectly_stuffed_snake
+("Odd stuffed snake / Is this really what you wanted to do?"). Making one
+would hand the player an obj with no iops at all - not even Drop - and no
+way to undo it. The wrong-ingredient cases refuse instead.
+
+Shared triggers extended rather than duplicated: [opheldu,knife] in
+gnome_cooking/cutting_fruit.rs2 and [opheldu,pestle_and_mortar] in
+quest_deserttreasure/scripts/dt_blood.rs2.
+
+Not compiled and not playtested.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

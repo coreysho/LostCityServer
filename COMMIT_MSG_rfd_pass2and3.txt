@@ -1,0 +1,61 @@
+Recipe for Disaster: the Mountain Dwarf and the Lumbridge Guide
+
+Two of the ten sub-quests, in one commit because they share the hooks they
+added to quest_100.rs2 and hundred_dining_room.rs2.
+
+--- Freeing the Mountain Dwarf ---
+
+Rohak is at 0_44_154_49_20, in the dwarf camp at the east end of the
+tunnel under White Wolf Mountain - the same tunnel Fishing Contest opens,
+whose east exit lands eleven tiles away.
+
+He is two npcs, and the cache wired the swap itself:
+hundred_dwarf_dad_multi (0 -> "An old Dwarf", 1 -> Rohak) and
+hundred_dwarf_drunk_multi (2 -> drunk Rohak with the dwarf_drunk anims).
+At state 2 the first shell resolves to no child and vanishes.
+
+Chain: inspect the plinth -> find Rohak -> he only ever baked one that
+badly and he was drunk at the time -> a dwarf will not drink a stranger's
+ale without a coin in the bottom (which is what the shipped
+hundred_dwarf_asgarnian_ale's own description says) -> drunk Rohak bakes
+a red-hot rock cake -> quench it in any water source -> put it in the
+frozen dwarf's hand.
+
+--- Freeing the Lumbridge Guide ---
+
+The dish is a cake and the cache says so without ambiguity:
+100guide_flourdone, 100guide_milkdone and 100guide_eggdone are the three
+ingredients of one, and the cooking skill already builds the rest. They
+come from the Cook and the two local farmers, one gift each.
+
+NOT used, and recorded rather than invented: 100guide_q1/q2/tot/lastgame
+describe some repeated number game with a running total. What the rules
+were is not recoverable - the ranges do not add up as a sum, there is no
+interface for it, and no npc carries a param that would drive one.
+
+--- Fixed on the way ---
+
+Gee (lumbridge_guide2_man) and Donie (lumbridge_guide2_woman) are placed
+twice each around Lumbridge with op1=Talk-to and had no handler anywhere
+in the repo - four npcs that did nothing when clicked. Same class as
+Oronwen's Trade and the Lumbridge Castle doors. They now have ordinary
+farmer chatter outside the quest as well.
+
+--- Structure for passes 4 onwards ---
+
+hundred_inspect became a proc rather than a label so a written sub-quest
+can set its stage after printing its plinth line; unwritten victims still
+route through it with $written = 0. Each sub-quest owns a
+[proc,hundred_<name>_journal] returning its own journal block. Sub-quests
+needing something from the Cook get first refusal on his conversation via
+a proc returning whether it did the talking.
+
+Shared triggers extended rather than duplicated: [oplocu,_watersource]
+gained the rock-cake case. [opheldu,coins] is newly declared - checked
+repo-wide first, nothing else handles coins as a use-item and every
+handler it could have shadowed ends in the same default message.
+
+Not compiled and not playtested.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

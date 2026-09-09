@@ -1,0 +1,40 @@
+Recipe for Disaster: the frame (pass 1 of ~11)
+
+RFD is ten quests in one. This builds the scaffolding every sub-quest
+hangs off: the Cook, Aris, the way in and out of the frozen dining room,
+the nine victims, the Culinaromancer's chest and the journal. Each of the
+ten sub-quests is its own pass after this.
+
+The cache ships essentially all of RFD - both dining rooms at m29_83
+(frozen and finished), the Lumbridge portal and chest, BOTH shops at ten
+tiers each (hundred_foodchest1..10 and hundred_rewardchest1..10, already
+in inv.pack), the ten gauntlet levels and ten cooking weapons, and every
+sub-quest's npcs, objs, locs and varbits. Nothing is blocked on missing
+data.
+
+hundred_subquest_tally is ten bits for ten sub-quests, which is also the
+number of chest tiers, gauntlet levels and cooking weapons - so the reward
+tiers unlock themselves off one counter. One quest point each;
+~count_questpoints counts bits rather than comparing a stage.
+
+Two shipped multis omitted the states the quest passes through, which made
+it unstartable:
+* hundred_aris listed states 3 and 4 only, and state 3 is set BY talking
+  to her - so at state 2 she resolved to no child at all: no name, no
+  model, no ops.
+* hundred_portal_multi listed state 4 only. All three portal barriers are
+  inside the frozen room and only lead out, so that left no way in during
+  the intro and no way back after completion.
+
+Standing bug fixed on the way, unrelated to this quest: the Lumbridge
+Castle kitchen door and the dining-hall double doors have never opened for
+anybody. They shipped with op1=Open, no category and no next_loc_stage,
+so nothing in doors/scripts/ could handle them. Also fixed:
+hundred_ilm_var_1 had no scope= line, so all of "Freeing King Awowogei"
+would have been forgotten on logout.
+
+Not compiled and not playtested - the build cannot run from the Linux side
+of the device bridge (engine/node_modules/@esbuild is win32-x64 only).
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

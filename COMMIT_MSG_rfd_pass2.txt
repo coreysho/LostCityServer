@@ -1,0 +1,34 @@
+Recipe for Disaster: Freeing the Mountain Dwarf (pass 2 of ~11)
+
+The first of the ten sub-quests, and the template the other nine follow.
+
+Rohak is at 0_44_154_49_20, in the dwarf camp at the east end of the
+tunnel under White Wolf Mountain - the same tunnel Fishing Contest opens,
+whose east exit lands eleven tiles away at 0_44_154_60_22.
+
+He is two npcs, not one, and the cache wired the swap itself:
+hundred_dwarf_dad_multi (0 -> "An old Dwarf", 1 -> Rohak) and
+hundred_dwarf_drunk_multi (2 -> drunk Rohak with the dwarf_drunk anims).
+At state 2 the first shell resolves to no child and vanishes.
+
+Chain: inspect the plinth -> find Rohak -> he only ever baked one that
+badly and he was drunk at the time -> a dwarf will not drink a stranger's
+ale without a coin in the bottom (which is what the shipped
+hundred_dwarf_asgarnian_ale's own description says) -> drunk Rohak bakes
+a red-hot rock cake -> quench it in any water source -> put it in the
+frozen dwarf's hand.
+
+hundred_inspect became a proc so a sub-quest can do work after printing
+its plinth line; the eight unwritten victims still route through it with
+$written = 0 and print the placeholder.
+
+Shared triggers extended rather than duplicated: [oplocu,_watersource] in
+general_use/scripts/water_sources.rs2 gained the rock-cake case.
+[opheldu,coins] is newly declared - checked repo-wide first, nothing else
+handles coins as a use-item and every handler it could have shadowed ends
+in the same default message.
+
+Not compiled and not playtested.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

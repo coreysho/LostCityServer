@@ -1,0 +1,43 @@
+Recipe for Disaster: Freeing Skrach Uglogwee (pass 5 of ~11)
+
+The whole boat is spelled out by one six-state multiloc.
+100_jubbly_multi_push_tree at 0_41_46_29_19 resolves to: old tree ->
+old tree + anim=100_jubbly_tree_fall -> "pushed over by Rantz" ->
+"felled, with the roots cut off" -> "Crude boat, made from an old tree"
+-> "Roots". Six states in order, with the felling animated and the
+100_jubbly_root_chopping seq shipped alongside. None of the six declares
+an op, so the axe work is [oplocu] and the pushing and dragging are
+Rantz's.
+
+The cache put a SECOND Rantz on the Feldip shore for this - 100_rantz_multi_npc
+at 0_41_46_27_18, revealed by 100_ogre_rantz_visible. Big Chompy's Rantz
+is a different npc at (6,37) and keeps its own handler.
+
+100_ogre_jubbly_boat_visible reveals both boat npcs at once, at
+0_41_46_31_20 and 0_43_48_1_9 - one varbit, a ferry in both directions.
+
+Fixed on the way: 100_jubbly_bird had op5=Attack and no combat stats at
+all, so the one bird the sub-quest is about was unkillable. Scaled off
+chompy_bird, the cache's other hunted bird, to this one's own vislevel of
+9, using the 100_jubbly_* attack/defend/death seqs that shipped and that
+nothing had ever referenced.
+
+Two dead generated stubs replaced: [opheld1] on both balloon toads said
+"You can't set a trap here." and had nowhere to be placed. They are the
+bait. The message survives for everywhere that is not the island.
+
+Also new: a cooking_generic dbrow for the jubbly. Raw, cooked and burnt
+all shipped and nothing had ever made the raw one cookable.
+cantcookmessage_range keeps it on an open fire, which is where an ogre
+would put it and all the island has.
+
+NOT used, and recorded: 100_jubbly_spitroast / _cooked / _ruined and
+100_jubbly_rock_and_string_brown / _white are defined but placed nowhere
+and declare no ops - using them would mean loc_add-ing scenery for its own
+sake. 100_jubbly_multi_arrow_tree is likewise op-less scenery in both
+states; it is set when the first shot is fired and never clicked.
+
+Not compiled and not playtested.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

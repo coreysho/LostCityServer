@@ -1,0 +1,31 @@
+Recipe for Disaster: Freeing the Lumbridge Guide (pass 3 of ~11)
+
+The dish is a cake and the cache says so without ambiguity:
+100guide_flourdone, 100guide_milkdone and 100guide_eggdone are the three
+ingredients of one, and the cooking skill already builds cake_tin +
+pot_flour + bucket_milk + egg -> uncooked_cake -> range -> cake.
+
+The three ingredients come from the three people in Lumbridge who would
+have them - the Cook, and the two local farmers Gee and Donie. The gifts
+are one-time, which is what the three *done bits are for.
+
+Dead op fixed on the way: Gee (lumbridge_guide2_man) and Donie
+(lumbridge_guide2_woman) are placed twice each around Lumbridge with
+op1=Talk-to and had no handler anywhere in the repo - four npcs that did
+nothing when clicked. Same class as Oronwen's Trade and the castle doors.
+They now have ordinary farmer chatter outside the quest as well.
+
+NOT used, and recorded rather than invented: 100guide_q1 (5 bits),
+100guide_q2 (4), 100guide_tot (4) and 100guide_lastgame (3) describe some
+repeated number game with a running total. What the rules were is not
+recoverable - the ranges do not add up as a sum, there is no interface for
+it, and no npc carries a param that would drive one. Left at zero.
+
+Sub-quests that need something from the Cook now get first refusal on his
+conversation via a proc returning whether it did the talking, so pass 4
+onwards can hook in the same way.
+
+Not compiled and not playtested.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

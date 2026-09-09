@@ -1,0 +1,16 @@
+Mourning's End Part I: Elena's two steps must be procs, not labels
+
+Build error: "Unable to jump to labels from within a proc."
+
+[proc,mourning_elena_chat] dispatched with @mourning_elena_sieve and
+@mourning_elena_sheep. It is reached through [proc,elena_home_chat] in
+areas/area_ardougne_east/scripts/elena.rs2 - that body is a proc because
+the elena2 and elena2_vis shells share it - so everything downstream of
+it is inside a proc, and @ is only legal from a trigger or another label.
+
+Both are now [proc,...] and called with ~. Added as item 11 to
+claude/rs2-compile-traps.md, with the mechanical check that would have
+caught it.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

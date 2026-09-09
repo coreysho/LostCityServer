@@ -1,0 +1,40 @@
+Mourning's End Part I: build the second half (stages 5-20)
+
+The quest now completes. Two of the three blockers recorded in
+claude/mournings-end-part-1.md were wrong and are corrected there:
+
+* "The HQ is a dead end" - the earlier pass read m39_51 p1, the upper
+  floor. mourning_hideout_trap_door [8783] is on p0 at (46,63), in the
+  walled yard, and both staircases on the route are already handled in
+  stairs.rs2. Neither the trapdoor nor mourner_hideout_ladder1 had a
+  handler; both do now.
+* "The plague sheep are placed nowhere" - plaguesheep_1..4 are placed
+  three to a pen in four pens on m40_52 and each is a multi-npc keyed on
+  its own sheep varbit. Dyeing a flock is one varbit write.
+
+Still true: there is no crosshair interface, so the sheep-dyeing is the
+mitigation the old doc proposed (use the loaded device on a sheep), not
+the real minigame.
+
+New: mourning_hideout.rs2, mourning_toxin.rs2, mourning_gun.rs2,
+mourning_elena.rs2.
+
+Fixes found on the way:
+* The four dyed plague sheep shipped with no ops at all, so dyeing a
+  flock stripped its Prod option and made Sheep Herder unfinishable for
+  that player. op1=Prod added to all four.
+* mourning_quest_part2 had no scope= line, so the whole of Part II's
+  state would have been forgotten on logout.
+* mourning_orchard_applepile had no handler, which also left Biohazard
+  with no in-world source of rotten apples.
+
+Shared triggers were extended rather than duplicated: the four dyes in
+dye_cape.rs2, regicide_barrel_naphtha in regicide_bomb.rs2, the cauldron
+in quest_biohazard.rs2, and the four plaguesheep in diseased_sheep.rs2.
+
+Not compiled and not playtested - the build cannot run from the Linux
+side of the device bridge (engine/node_modules/@esbuild is win32-x64
+only).
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU
