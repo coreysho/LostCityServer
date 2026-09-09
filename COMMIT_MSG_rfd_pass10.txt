@@ -1,0 +1,52 @@
+Recipe for Disaster pass 10: Defeating the Culinaromancer
+
+Recipe for Disaster is finished. Ten sub-quests, ten quest points, the
+Culinaromancer's Chest and all ten pairs of gloves.
+
+He has been standing in the room the whole quest. culinaromancer_froze is
+placed at 0_29_83_7_5, inside the frozen dining hall, with walkanim and
+readyanim both 100_cul_froze and no ops at all - mid-spell, unclickable,
+three tiles from where the player lands on their first visit. Left exactly
+as he is.
+
+THE BIG FIX: all eleven of the finale's combat npcs shipped with op2=Attack,
+a vislevel and nothing else. No hitpoints, no attack, strength or defence,
+no damagetype, no anims. Eleven unkillable bosses - the same defect
+100_jubbly_bird had in pass 5. The anims were never the problem:
+agrith_nana_*, rock_*, dessourt_* and horror_dagannoth_* all ship complete
+attack / block / death sets.
+
+The gauntlet is sequential and the shells say so. hundred_culinaromancer_
+book5..book1 are five copies of the wizard, vislevel=hide, no ops,
+readyanim=book_chuck_ready, each with a different model9 - the stack of
+books in his hands, one fewer each time. Five books, five minions. After the
+fifth he becomes hundred_culinaromancer_final, which is op2=Attack and
+holding obj_hundred_cleaver_manwear - a cleaver, which is why he is built as
+a melee fighter and not a caster.
+
+The Gelatinnoth Mother's six forms are the one place the numbers carry a
+mechanic. The cache names them air / water / fire / earth / melee / ranged,
+which is the original saying "hit it with the matching thing", so each form
+now has a defence of 5 against its own style and 1000 against everything
+else. black_knight_titan already uses 1000 that way, so this is the repo's
+own idiom rather than an invention. She cycles on a 30-tick ring.
+
+SIMPLIFICATION, recorded in quest_100.constant: the engine's defence params
+separate melee, ranged and magic and nothing finer, so the four elemental
+forms all come out as "hit it with magic". Horror from the Deep solves the
+finer version by special-casing the npc type inside the three combat
+resolution files; that route is available if it is ever worth tightening.
+
+Also fixed: hundred_rewardlamp, the quest's own reward, carries iop1=Rub and
+its generated stub said "Nothing interesting happens." The genie lamp's
+interface does the right thing and only needed to stop hardcoding which lamp
+it consumes, so xplamp.rs2 now removes whichever one the player is holding
+and bank.rs2 refuses to bank the RFD one too.
+
+Every boss death hands off to a player queue rather than writing the tally
+from the death hook - trap 4, the Horror from the Deep pattern. Nothing
+calls npc_setmode; the bosses find the player through huntmode. The arena is
+not instanced, which matches every other scripted quest boss in this repo.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

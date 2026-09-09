@@ -1,0 +1,54 @@
+Recipe for Disaster pass 9: Freeing Pirate Pete
+
+All nine victims are now written. Only the Culinaromancer is left.
+
+This is the sub-quest my own notes called "genuinely blocked" and listed
+four missing pieces for. All four claims were wrong:
+
+  * "nothing in the repo references m46_148" - the entrance is MURPHY at
+    0_41_49_44_26 in Port Khazard, who has had a full [opnpc1] sitting in
+    minigames/game_trawler/scripts/murphy.rs2 the whole time. He is the
+    Fishing Trawler man and the diving man, exactly as in the original.
+  * "there is no fishbowl obj" - six of them ship, and it does not matter:
+    hundred_pirate_diving_helmet is a complete wearable obj with manwear,
+    womanwear, manhead and womanhead across hat, head and jaw. So is the
+    diving apparatus.
+  * "the crabs and mudskippers drop nothing" - drop_tables/scripts/crab.rs2
+    and mudskipper.rs2 already existed and already dropped the fresh claw,
+    the fresh shell and the hide. Only the crab MEAT was missing.
+  * "hundred_pirate is placed nowhere" - true, and normal; all nine victims
+    are an unplaced living npc plus a placed frozen loc.
+
+The quest: inspect the plinth, ask Murphy about the seabed, take the
+fishbowl helmet and the diving apparatus and wear both, and he lowers you
+on the anchor chain. Pick kelp, open the crab pen, kill crabs for meat, and
+bring a raw cod and a loaf down with you. Grind all four with a pestle and
+mortar, press them into a raw fishcake, cook it, give it to the frozen
+Pete. Climb the anchor to get back up.
+
+Latent defects fixed on the way:
+
+  * The crab pen's double door shipped with op1=Open, no category and no
+    next_loc_stage - the same state the Lumbridge kitchen door was in, and
+    with the same consequence: every giant crab in the game has been sealed
+    behind a decorative wall since the map was imported.
+  * The raw fishcake had no cooking_generic row, so it was uncookable. The
+    third dish in this quest with that exact gap.
+  * Crab meat was missing from the crab drop table.
+  * ^hundred_victims_count = 9. Three places in quest_100.rs2 - the Cook,
+    Aris and the journal - compared the tally against all TEN sub-quest
+    bits, but bit 9 is the Culinaromancer himself, so each would have
+    waited for the finale to be finished before admitting it was available.
+
+Also: bread already owned an [opheldu] from pass 7, and [opheldu] runs the
+first half that carries a trigger rather than trying both - so grinding a
+loaf had to be made reachable from that side too.
+
+The Mogre Guards are a conversation, not a gate: all five declare
+op1=Talk-to and nothing else - no attack op, no combat stats, no anims. The
+crab disguise is real (fresh claw and shell worked against one of the rocks
+on the seabed floor, with the two broken-shell objs as the failure case)
+and it opens Nung up rather than opening the pen.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

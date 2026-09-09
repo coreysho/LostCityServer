@@ -1,0 +1,46 @@
+Recipe for Disaster pass 8: Freeing Evil Dave
+
+The sixth of the ten sub-quests, and the most complete one in the cache -
+Doris, the trapdoor, the cellar, the living Dave, eighteen Hell-Rats, the
+Spicy stew with its unused Smell option, four spice shakers in four doses
+each, eight dose/target varbits, a hell-rat catch counter, a slot to
+remember what colour your cat was, and hell-cat forms for all three cat
+stages. Nothing in the repo read or wrote any of it.
+
+The quest: inspect the plinth, find Doris in Edgeville, go down her
+trapdoor, and ask Evil Dave what he was eating. He wants an ordinary stew
+with three doses of spice in it and will not say which. Take a cat down;
+it becomes a hell-cat; Chase-vermin on the Hell-Rats; every fourth catch
+brings out a Hell-Rat Behemoth, which drops a spice shaker. Shake spice in,
+let Dave taste it, adjust, take the right one to the plinth.
+
+One thing invented, because the cache does not have it: the Hell-Rat
+Behemoth npc (configs/quest_100.npc, id 3858), reusing the hell-rat's own
+model at twice the size. It is what the counter counts up to.
+
+Two latent defects fixed on the way, neither of them this quest's:
+
+  * op5=Chase-vermin was missing from all eighteen pet cats, so
+    [opnpc5,_petcat] in quest_fluffs/scripts/pet.rs2 - a complete, sourced
+    implementation of cats hunting vermin - had never been reachable by
+    any player. Turned on for all eighteen.
+  * The three hell-cat npcs and their three objs shipped with no category
+    and no params at all, so the pet system could not see them and a
+    picked-up hell-cat could never have been put back down.
+  * 100_dave_celler_stairs, the only way out of the cellar, had an
+    [oploc1] in stairs.rs2 with nothing but a default case.
+  * hundred_dave_hellrat had no respawnrate, so the eighteen rats were
+    gone for good once a cat had caught them.
+
+One deliberate deviation, documented in quest_100.constant: the living
+Dave gives per-colour feedback on a wrong stew. The target is still rolled
+per player and still hidden. Three unknowns in 0..3 with no feedback is a
+brute-force search, and the cache put a Smell option on the stew precisely
+so the player can see where they are.
+
+Also: param=next_obj_stage added to the sixteen spice shakers so the dose
+chain reads a param instead of sixteen hardcoded pairs, and the journal
+now lists Pirate Pete alone as the sub-quest still unwritten.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU
