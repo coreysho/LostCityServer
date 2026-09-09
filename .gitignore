@@ -8,3 +8,6 @@ javaclient/
 Client-Java/
 Engine-TS/
 .idea/.name
+
+# Source caches for asset imports (rev 474, OSRS). Tens of MB each - never commit.
+caches/
