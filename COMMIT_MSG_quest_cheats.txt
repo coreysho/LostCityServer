@@ -1,0 +1,27 @@
+Add quest stage cheats so the untested backlog can be tested
+
+A large amount of quest content has accumulated without ever being run:
+Fremennik Trials, Recruitment Drive, Regicide's second half, Roving Elves,
+Mourning's End Part 1 and all three Monkey Madness stages. A clean build only
+proves it parses; the bottleneck is that testing any step means playing the
+quest from the beginning.
+
+_test/scripts/cheats/cheat_quests.rs2 adds ::mm, ::viking, ::rd, ::regicide,
+::roving, ::mourning and ::dt, each taking a stage number and setting that
+quest's varp plus its journal entry. ::mm also hands over the items each stage
+assumes you are already carrying - royal seal and orders from stage 1, mould
+and dentures from 6, the M'speak amulet from 8, talisman 9, greegree 10, zoo
+monkey 12, sigil 14 - and ::mmtp jumps to the six coordinates the quest lands
+you on.
+
+Two things worth knowing for anyone extending this. A debugproc is handed NO
+pointers, so each one acquires with p_finduid and does its work inside the
+success branch rather than the early-return shape iku/ikd use. And RS2 cannot
+write a varp named by a variable, so the per-quest varp assignment has to live
+in each debugproc; only the journal update and the message are shared.
+
+Verified against the tracked packs: all questlist components, objs, varps and
+constants resolve.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU
