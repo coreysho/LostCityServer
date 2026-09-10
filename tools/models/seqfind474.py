@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Find every 474 seq that animates a given rig.
+
+Give it seq ids you already know (e.g. an npc's readyanim/walkanim); it works out
+which frame group(s) those sit on and lists every other seq using the same group.
+That is how you recover a boss's whole animation set - attack, death, special -
+none of which the npc config carries.
+"""
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dat2 import Store
+from reftable import RefTable, split_group
+from animconv474 import decode_474_seq
+
+def main():
+    cache = sys.argv[1]
+    known = [int(x) for x in sys.argv[2:]]
+    st = Store(cache)
+    rt2 = RefTable(st.read(255, 2))
+    files = split_group(st.read(2, 12), rt2.file_counts[12])
+    seqs = {i: b for i, b in zip(rt2.file_ids[12], files) if b}
+
+    dec = {}
+    for i, b in seqs.items():
+        try: d = decode_474_seq(b)
+        except Exception: continue
+        if 'frames' in d and d['frames']: dec[i] = d
+
+    want = set()
+    for k in known:
+        if k not in dec: print(f'seq {k}: no frame block'); continue
+        want |= {f >> 16 for f in dec[k]['frames']}
+    print(f'# rig frame group(s): {sorted(want)}')
+
+    hits = [(i, d) for i, d in sorted(dec.items()) if {f >> 16 for f in d['frames']} & want]
+    print(f'# {len(hits)} seq(s) share that rig\n')
+    for i, d in hits:
+        groups = sorted({f >> 16 for f in d['frames']})
+        mark = ' <-- given' if i in known else ''
+        print(f'  seq {i:<6} frames={len(d["frames"]):<4} delays={d["delays"][:6]}'
+              f'{"..." if len(d["delays"]) > 6 else ""} groups={groups}{mark}')
+
+if __name__ == '__main__':
+    main()

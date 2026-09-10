@@ -1,0 +1,56 @@
+Add content/tools/rs2check.py - the compile-trap checklist as a script
+
+claude/rs2-compile-traps.md had grown to seventeen items across five quests,
+every one of them learned by failing npm run build. A checklist in a doc only
+helps if it runs. This is the same checklist as a script, and it is a new file,
+so it cannot clobber anything.
+
+    cd content/scripts
+    python ..\tools\rs2check.py                  (whole repo, ~50s)
+    python ..\tools\rs2check.py path\to\file.rs2 (just these)
+    python ..\tools\rs2check.py --selftest        (prove the rules still fire)
+
+ERROR means it will not compile or is a real defect. CHECK means a symbol did
+not resolve, which usually means a stale working copy rather than a fault.
+Exit status is 1 if any ERROR was found, so it drops straight into a pre-commit
+hook or a batch file.
+
+Rules: brace/paren balance with block comments and strings stripped; duplicate
+triggers repo-wide; ^constant interpolated raw into a string; protected player
+varp written inside an ai_* trigger; unresolved @label / ~proc / ^constant /
+%var; a var that is in a .pack but has no config block; bare call to a command
+that returns a value; def_TYPE assigned from a mismatched return; argument
+count against a proc's declaration; @label jump inside a proc body; \r\r from
+line endings applied twice; unquoted comma in a config prose field, arity-aware
+against the .dbtable; and a sound_synth or anim naming something that does not
+exist.
+
+Getting the rules right mattered more than writing them. A checker that cries
+wolf gets ignored, and four rules had to be narrowed after flagging code that
+compiles clean:
+
+  * Argument counting flagged 81 call sites. A proc can return SEVERAL values
+    and fill several parameters at once - doors.rs2 has
+    ~movecoord_loc_return(~door_open(loc_angle, loc_shape)) where door_open
+    returns (int, int) - and db_getfield's arity depends on the dbtable column,
+    so it is not knowable from the script at all. The rule now only runs on
+    argument lists made of plain literals and variables.
+  * The block-comment scanner ran before // comments were stripped, so the URL
+    .../web/*/http://... in quest_blackknight.rs2 line 141 opened a block
+    comment that never closed and blanked the rest of the file.
+  * Only PLAYER varps need p_active_player - .varn and .vars writes are fine in
+    an npc trigger - and protect=no opts out, and a preceding p_finduid grants
+    the access.
+  * The comma rule flagged magic_spells.dbrow, where
+    column=specificobj_reqmessage,obj,string declares a two-value column whose
+    first comma is load-bearing.
+
+Validated three ways: --selftest catches all eight ERROR classes at the correct
+lines; the two real build failures from Recipe for Disaster (the doubled CRLF in
+a .constant and the comma in cooking_generic_jubbly) are both caught with the
+right explanation; and the whole tree reports 0 ERROR across 1,617 scripts and
+403 configs, apart from one genuine pre-existing find in Horror from the Deep -
+see the doc.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01J1qUhTcu63bJ3hCBBxy7nU

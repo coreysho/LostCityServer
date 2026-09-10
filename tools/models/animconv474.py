@@ -164,7 +164,9 @@ def pack_max(path):
 # ------------------------------------------------------------------ main
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('cache'); ap.add_argument('--seq', action='append', type=int, required=True)
+    ap.add_argument('cache')
+    ap.add_argument('--seq', action='append', required=True,
+                    help='474 seq id, optionally id:local_name (e.g. 7058:graardor_walk)')
     ap.add_argument('--content', default=None)
     ap.add_argument('--out', default=None, help='.seq config to write')
     ap.add_argument('--dry-run', action='store_true')
@@ -175,8 +177,13 @@ def main():
     seq_files = split_group(st.read(2, 12), rt2.file_counts[12]); seq_ids = rt2.file_ids[12]
     seqs = {i: b for i, b in zip(seq_ids, seq_files) if b}
 
+    seq_names = {}
+    for spec in a.seq:
+        sid, _, nm = str(spec).partition(':')
+        seq_names[int(sid)] = nm or f'seq_474_{int(sid)}'
+
     wanted = {}
-    for sid in a.seq:
+    for sid in seq_names:
         if sid not in seqs: raise SystemExit(f'474 seq {sid} not found')
         d = decode_474_seq(seqs[sid])
         if 'frames' not in d: raise SystemExit(f'474 seq {sid} has no frame block')
@@ -210,14 +217,17 @@ def main():
     anim_pack = os.path.join(C, 'pack', 'anim.pack')
     base_pack = os.path.join(C, 'pack', 'base.pack')
     seq_pack = os.path.join(C, 'pack', 'seq.pack')      # tracked - the seq name must be registered
-    set_next = pack_max(os.path.join(C, 'pack', 'animset.pack')) + 1
+    # tools/pack/graphics/pack.ts does AnimSetPack.getByName(basename of the .anim file),
+    # so a set that is not registered here is silently dropped at build time.
+    animset_pack = os.path.join(C, 'pack', 'animset.pack')
+    set_next = pack_max(animset_pack) + 1
 
     frame_id_map = {}      # (474group, fileidx) -> new 377 frame id
     for g in groups:
         c = conv[g]
-        names = [f'anim_{g}_{fi}' for fi, _, _, _ in c['frames']]
-        assigned, _ = pack_append(anim_pack, names)
-        ids = [assigned[n] for n in names]
+        frame_names = [f'anim_{g}_{fi}' for fi, _, _, _ in c['frames']]
+        assigned, _ = pack_append(anim_pack, frame_names)
+        ids = [assigned[n] for n in frame_names]
         for (fi, _, _, _), nid in zip(c['frames'], ids):
             frame_id_map[(g, fi)] = nid
         if max(ids) > 65535:
@@ -229,6 +239,7 @@ def main():
             print(f'#   group {g} exceeds a 377 section limit - split across {len(chunks)} sets')
         for chunk in chunks:
             set_name = f'anim_{set_next}'
+            pack_append(animset_pack, [set_name])
             pack_append(base_pack, [f'base_{set_next}'])
             blob = build_377_anim(chunk, c['base'])
             # verify our own output round-trips through the client's own reader
@@ -246,14 +257,14 @@ def main():
     lines = ['// Animations converted from the rev 474 cache by tools/models/animconv474.py.',
              '// Frame data is a byte re-layout of 474 - nothing re-encoded.', '']
     for sid, d in wanted.items():
-        lines.append(f'[seq_474_{sid}]')
+        lines.append(f'[{seq_names[sid]}]')
         for n, (fr, dl) in enumerate(zip(d['frames'], d['delays']), start=1):
             nid = frame_id_map[(fr >> 16, fr & 0xffff)]
             lines.append(f'frame{n}=anim_{fr >> 16}_{fr & 0xffff}')
             lines.append(f'delay{n}={dl}')
         lines.append('')
-    pack_append(seq_pack, [f'seq_474_{sid}' for sid in wanted])
-    for sid in wanted: print(f'#   seq.pack registered seq_474_{sid}')
+    pack_append(seq_pack, [seq_names[sid] for sid in wanted])
+    for sid in wanted: print(f'#   seq.pack registered {seq_names[sid]}')
     text = '\r\n'.join(lines)
     if a.out:
         open(a.out, 'w', newline='').write(text)
