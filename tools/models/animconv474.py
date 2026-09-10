@@ -58,21 +58,51 @@ def parse_474_frame(b):
     return sk, n, bytes(flags), bytes(b[vstart:p])
 
 def decode_474_seq(b):
+    """Decode a 474 seq config.
+
+    Opcodes are NOT written in ascending order - op 2 or op 5 routinely comes before op 1 -
+    so bailing on the first unrecognised opcode silently drops the frame list. That mistake
+    hid the frames of 4,052 of the cache's 7,297 seqs, Graardor's block and death among them.
+    Anything unknown is therefore recorded and reported, never skipped past.
+    """
     p = 0; out = {}
-    while p < len(b):
-        op = b[p]; p += 1
+    n = len(b)
+    def g1():
+        nonlocal p
+        v = b[p]; p += 1; return v
+    def g2():
+        nonlocal p
+        v = (b[p] << 8) | b[p+1]; p += 2; return v
+    def g3():
+        nonlocal p
+        v = int.from_bytes(b[p:p+3], 'big'); p += 3; return v
+    def g4():
+        nonlocal p
+        v = int.from_bytes(b[p:p+4], 'big'); p += 4; return v
+    while p < n:
+        op = g1()
         if op == 0: break
         if op == 1:
-            n = (b[p] << 8) | b[p+1]; p += 2
-            def block():
-                nonlocal p
-                v = [(b[p+2*i] << 8) | b[p+2*i+1] for i in range(n)]; p += 2*n
-                return v
-            delays = block(); lo = block(); hi = block()
-            out['delays'] = delays
+            c = g2()
+            out['delays'] = [g2() for _ in range(c)]
+            lo = [g2() for _ in range(c)]
+            hi = [g2() for _ in range(c)]
             out['frames'] = [(h << 16) | l for h, l in zip(hi, lo)]
+        elif op == 2:  out['loops'] = g2()
+        elif op == 3:  out['walkmerge'] = [g1() for _ in range(g1())]
+        elif op == 4:  out['reachforward'] = 1           # payload-less
+        elif op == 5:  out['priority'] = g1()
+        elif op == 6:  out['replaceheldleft'] = g2()
+        elif op == 7:  out['replaceheldright'] = g2()
+        elif op == 8:  out['maxloops'] = g1()
+        elif op == 9:  out['preanim_move'] = g1()
+        elif op == 10: out['postanim_move'] = g1()
+        elif op == 11: out['duplicatebehaviour'] = g1()
+        elif op == 12: out['op12'] = [g4() for _ in range(g1())]
+        elif op == 13: out['sounds'] = [g3() for _ in range(g1())]
         else:
-            out['_stop'] = op; break
+            out['_unknown_op'] = op; out['_at'] = p - 1; break
+    out['_tail'] = n - p
     return out
 
 # ------------------------------------------------------------------ 377 writers
@@ -220,7 +250,6 @@ def main():
     # tools/pack/graphics/pack.ts does AnimSetPack.getByName(basename of the .anim file),
     # so a set that is not registered here is silently dropped at build time.
     animset_pack = os.path.join(C, 'pack', 'animset.pack')
-    set_next = pack_max(animset_pack) + 1
 
     frame_id_map = {}      # (474group, fileidx) -> new 377 frame id
     for g in groups:
@@ -237,10 +266,12 @@ def main():
         chunks = split_for_sets(tagged)
         if len(chunks) > 1:
             print(f'#   group {g} exceeds a 377 section limit - split across {len(chunks)} sets')
-        for chunk in chunks:
-            set_name = f'anim_{set_next}'
+        for k, chunk in enumerate(chunks):
+            # Named after the 474 group, not a running counter, so re-running the tool
+            # reuses the same set instead of writing a duplicate beside the old one.
+            set_name = f'anim_474_{g}' + (f'_{k+1}' if len(chunks) > 1 else '')
             pack_append(animset_pack, [set_name])
-            pack_append(base_pack, [f'base_{set_next}'])
+            pack_append(base_pack, [set_name.replace('anim_', 'base_', 1)])
             blob = build_377_anim(chunk, c['base'])
             # verify our own output round-trips through the client's own reader
             got, gotbase = parse_377_anim(blob)
@@ -252,14 +283,30 @@ def main():
             open(os.path.join(C, 'models', f'{set_name}.anim'), 'wb').write(blob)
             print(f'#   wrote models/{set_name}.anim  ({len(blob)} bytes, {len(chunk)} frames, '
                   f'ids {chunk[0][0]}-{chunk[-1][0]}) - round-trip verified')
-            set_next += 1
 
     lines = ['// Animations converted from the rev 474 cache by tools/models/animconv474.py.',
-             '// Frame data is a byte re-layout of 474 - nothing re-encoded.', '']
+             '// Frame data is a byte re-layout of 474 - nothing re-encoded. The flags below',
+             "// (priority, loops, walkmerge...) are the cache's own; 474 and 377 use the same",
+             '// seq opcodes, so they carry across unchanged - see tools/pack/config/SeqConfig.ts.', '']
     for sid, d in wanted.items():
         lines.append(f'[{seq_names[sid]}]')
+        # 474 seq opcode -> Lost City .seq key. Identical numbering on both sides.
+        if 'loops' in d:        lines.append(f'loops={d["loops"]}')          # op 2
+        if d.get('walkmerge'):  lines.append('walkmerge=' +                  # op 3
+                                             ','.join(f'label_{l}' for l in d['walkmerge']))
+        if 'reachforward' in d: lines.append('reachforward=yes')             # op 4
+        if 'priority' in d:     lines.append(f'priority={d["priority"]}')    # op 5
+        if 'maxloops' in d:     lines.append(f'maxloops={d["maxloops"]}')    # op 8
+        if 'preanim_move' in d: lines.append(f'preanim_move={d["preanim_move"]}')    # op 9
+        if 'postanim_move' in d: lines.append(f'postanim_move={d["postanim_move"]}') # op 10
+        if 'duplicatebehaviour' in d:
+            lines.append(f'duplicatebehaviour={d["duplicatebehaviour"]}')    # op 11
+        # ops 6/7 (replaceheldleft/right) are 474 OBJ ids and mean nothing here; ops 12/13
+        # are animation sounds, which 377 seqs have no field for. Reported, not emitted.
+        skipped = [k for k in ('replaceheldleft', 'replaceheldright', 'sounds', 'op12') if d.get(k)]
+        if skipped:
+            lines.append(f'// 474 also carried: {", ".join(skipped)} - not transferable')
         for n, (fr, dl) in enumerate(zip(d['frames'], d['delays']), start=1):
-            nid = frame_id_map[(fr >> 16, fr & 0xffff)]
             lines.append(f'frame{n}=anim_{fr >> 16}_{fr & 0xffff}')
             lines.append(f'delay{n}={dl}')
         lines.append('')
