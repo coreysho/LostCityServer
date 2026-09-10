@@ -1,0 +1,8 @@
+# Warriors' Guild room npcs (OSRS ids)
+2459 wguild_gamfred ready=dwarf_ready walk=dwarf_walk
+2460 wguild_ajjat ready=barrow_dharok_ready walk=barrow_dharok_walk
+2469 wguild_lidio ready=human_ready walk=human_walk_f
+2470 wguild_lilly ready=human_ready walk=human_walk_f
+2471 wguild_anton ready=human_ready walk=human_walk_f
+6072 wguild_jimmy ready=drunk_player_ready walk=drunk_player_walk
+6073 wguild_ref ready=human_ready walk=human_walk_f

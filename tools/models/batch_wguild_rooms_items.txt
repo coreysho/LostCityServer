@@ -1,0 +1,8 @@
+# Warriors' Guild rooms (OSRS objs)
+id:8856=wguild_defensive_shield
+id:8860=wguild_barrels_1
+id:8861=wguild_barrels_2
+id:8862=wguild_barrels_3
+id:8863=wguild_barrels_4
+id:8864=wguild_barrels_5
+id:8865=ground_ashes

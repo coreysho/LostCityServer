@@ -43,9 +43,9 @@ def main():
         if ob2 is None: raise SystemExit(f'spot {i} model {d["model"]}: {why}')
         models[f'spot_{name}'] = ob2
         if 'anim' in d:
-            if d['anim'] in seq_names and seq_names[d['anim']] != name:
-                raise SystemExit(f'seq {d["anim"]} requested under two names')
-            seq_names[d['anim']] = name
+            # several spots can share one seq (the four catapult missiles all spin on 4165):
+            # the first spot's name is the seq's name and the others point at it
+            seq_names.setdefault(d['anim'], name)
         if d.get('recol') or d.get('retex'):
             print(f'# spot {i}: recolours/retextures not carried over: {d.get("recol")} {d.get("retex")}')
         entries.append((i, name, d))
@@ -67,7 +67,7 @@ def main():
         lines.append(f'[{name}]')
         lines.append(f'// OSRS spotanim {i}')
         lines.append(f'model=spot_{name}')
-        if 'anim' in d: lines.append(f'anim={name}')
+        if 'anim' in d: lines.append(f"anim={seq_names[d['anim']]}")
         for k in ('resizeh', 'resizev', 'angle', 'ambient', 'contrast'):
             if k in d: lines.append(f'{k}={d[k]}')
         lines.append('')
