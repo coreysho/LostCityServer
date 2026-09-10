@@ -1,0 +1,3 @@
+# Slayer ring - Slayer point reward (skill_slayer/scripts/slayer_rewards.rs2). Only (8) is imported;
+# (7)..(1) reuse its models, written by hand in slayer_ring.obj.
+id:11866=slayer_ring_8

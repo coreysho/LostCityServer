@@ -1,0 +1,17 @@
+# Superior slayer monsters (OSRS ids), animated with their base monster's 377 seqs
+# (skill_slayer/configs/superiors.npc) - base npc after the #
+7388 superior_crushing_hand ready=crawlinghand_ready walk=crawlinghand_walk  # slayer_crawling_hand_1
+7389 superior_chasm_crawler ready=crawler_ready walk=crawler_walk  # slayer_cave_crawler_1
+7390 superior_screaming_banshee ready=banshee_ready walk=banshee_walk  # slayer_banshee_1
+7392 superior_giant_rockslug ready=rockslug_ready walk=rockslug_walk  # slayer_rockslug
+7393 superior_cockathrice ready=cockatrice_ready walk=cockatrice_walk  # slayer_cockatrice
+7394 superior_flaming_pyrelord ready=pyrefiend_ready walk=pyrefiend_walk  # slayer_pyrefiend_1
+7395 superior_monstrous_basilisk ready=basilisk_ready walk=basilisk_walk  # slayer_basilisk
+7397 superior_insatiable_bloodveld ready=bloodveld_ready walk=bloodveld_walk  # slayer_bloodveld
+7399 superior_vitreous_jelly ready=jelly_ready walk=jelly_walk  # slayer_jelly_1
+10397 superior_spiked_turoth ready=turoth_ready walk=turoth_walk  # slayer_turoth_mum
+7402 superior_abhorrent_spectre ready=specter_ready walk=specter_walk  # slayer_abberant_spectre_1
+7405 superior_king_kurask ready=kursk_ready walk=kursk_walk  # slayer_kursk_1
+7407 superior_marble_gargoyle ready=gargoyle_ready walk=gargoyle_fly  # slayer_gargoyle
+7411 superior_nechryarch ready=demons_ready walk=demons_walk  # slayer_nechryael
+7410 superior_greater_abyssal ready=abyssal_ready walk=abyssal_walk  # slayer_abyssal
