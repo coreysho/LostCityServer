@@ -23,6 +23,11 @@ from osrsloc import load_osrs_locs
 from animconv474 import pack_append
 from animconvosrs import convert_seqs
 
+# OSRS floor ids match the 377 flo table (colours checked one by one for every id the Warriors'
+# Guild uses) except where Jagex reused a slot later. Map those onto the 377 floor that looks the same.
+#   61: OSRS = hidden overlay (magenta, minimap mud)  377 = desert1 (sand)  -> 42 invisible
+OVERLAY_REMAP = {61: 42}
+
 def load_keys(path):
     data = json.load(open(path))
     keys = {}
@@ -134,6 +139,7 @@ def main():
             for x in range(64):
                 for z in range(64):
                     t = dict(tiles[lv][x][z])
+                    if t['ov'] in OVERLAY_REMAP: t['ov'] = OVERLAY_REMAP[t['ov']]
                     if t['ov'] is not None and not (0 <= t['ov'] <= flo_max): bad_floor.add(('ov', t['ov']))
                     if t['un'] and t['un'] > flo_max: bad_floor.add(('un', t['un']))
                     land[(lv, x, z)] = t
