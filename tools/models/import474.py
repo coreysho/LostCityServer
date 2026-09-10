@@ -8,9 +8,21 @@ in the batch file or added by hand afterwards.
 
 Batch file is TSV, '#' comments allowed:
 
-    474id   local_name        wearpos     model_basename   [desc]
-    8844    bronze_defender   lefthand    defender         A bronze defender.
-    8845    iron_defender     lefthand    defender         An iron defender.
+    474id   local_name        wearpos          model_basename   [desc]
+    8844    bronze_defender   lefthand         defender         A bronze defender.
+    10551   fighter_torso     torso/arms       fighter_torso    A sturdy torso.
+    11665   void_melee_helm   hat/head/jaw     void_helm        A void melee helm.
+
+The wearpos column may name up to THREE slots, slash separated: the slot the item occupies, then
+the body parts it HIDES (wearpos2, wearpos3). The cache does not carry these - they are a Lost City
+server-side concept - so they have to be supplied here, and getting them wrong means the player's
+hair pokes through the helmet or their arms through the sleeves. 377's own conventions:
+
+    hat                 hides nothing - partyhats, face masks that sit on the nose
+    hat/head            hoods, coifs, caps            (49 items in all.obj)
+    hat/head/jaw        full helms                    (51 items)
+    torso/arms          sleeved bodies, platebodies   (117 items)
+    torso               chainbodies, sleeveless        (30 items)
 
 model_basename is what makes shared art work: all seven defenders name 'defender', so the
 model is imported ONCE as obj_defender and every variant references it with its own recolours.
@@ -27,6 +39,48 @@ from ob2palette import REV, TABLE            # RGB15 <-> HSL16, verified against
 MODEL_SLOTS = [('model', ''), ('manwear', '_manwear'), ('womanwear', '_womanwear'),
                ('manhead', '_manhead'), ('womanhead', '_womanhead'),
                ('manwear2', '_manwear2'), ('womanwear2', '_womanwear2')]
+
+def model_extent(data):
+    """Bounding box of a 377-format .ob2, pure Python. Returns (dx, dy, dz) or None.
+
+    Used to spot FLAT wear models: a frontal face plate is only a couple of units deep and must
+    NOT hide the body part behind it, or that part vanishes and the plate floats. The black mask
+    (44 x 50 x 2) taught this; a real head covering is 24-38 deep."""
+    try:
+        b = data
+        p = len(b) - 18
+        g2 = lambda o: (b[o] << 8) | b[o + 1]
+        vcount = g2(p); fcount = g2(p + 2); tcount = b[p + 4]
+        f_tex, f_pri, f_alpha, f_flabel, f_vlabel = b[p+5], b[p+6], b[p+7], b[p+8], b[p+9]
+        xlen, ylen, zlen, flen = g2(p+10), g2(p+12), g2(p+14), g2(p+16)
+        o = vcount + fcount
+        if f_pri == 255:  o += fcount
+        if f_flabel == 1: o += fcount
+        if f_tex == 1:    o += fcount
+        if f_vlabel == 1: o += vcount
+        if f_alpha == 1:  o += fcount
+        o += flen + fcount * 2 + tcount * 6
+        xo, yo, zo = o, o + xlen, o + xlen + ylen
+        def gsmart(pos):
+            return (b[pos] - 64, pos + 1) if b[pos] < 128 else (((b[pos] << 8 | b[pos+1]) - 49152), pos + 2)
+        px = py = pz = 0
+        xs = ys = zs = []
+        mnx = mny = mnz = 1 << 30; mxx = mxy = mxz = -(1 << 30)
+        vp, xp, yp, zp = 0, xo, yo, zo
+        for _ in range(vcount):
+            fl = b[vp]; vp += 1
+            dx = dy = dz = 0
+            if fl & 1: dx, xp = gsmart(xp)
+            if fl & 2: dy, yp = gsmart(yp)
+            if fl & 4: dz, zp = gsmart(zp)
+            px += dx; py += dy; pz += dz
+            mnx = min(mnx, px); mxx = max(mxx, px)
+            mny = min(mny, py); mxy = max(mxy, py)
+            mnz = min(mnz, pz); mxz = max(mxz, pz)
+        return (mxx - mnx, mxy - mny, mxz - mnz)
+    except Exception:
+        return None
+
 
 def hsl16_to_rgb15(h):
     """A .obj config writes RGB15; the packer converts to HSL16. Cache recolours are already
@@ -45,7 +99,10 @@ def read_batch(path):
         p = [x.strip() for x in ln.split('\t') if x.strip() != '']
         if len(p) < 4:
             raise SystemExit(f'batch line needs at least 4 tab-separated fields: {ln!r}')
-        rows.append({'id': int(p[0]), 'name': p[1], 'wearpos': p[2], 'base': p[3],
+        wear = [w.strip() for w in p[2].split('/') if w.strip()]
+        if len(wear) > 3:
+            raise SystemExit(f'wearpos takes at most 3 slash-separated slots: {ln!r}')
+        rows.append({'id': int(p[0]), 'name': p[1], 'wearpos': wear, 'base': p[3],
                      'desc': p[4] if len(p) > 4 else None})
     return rows
 
@@ -77,6 +134,13 @@ def main():
         for key, suffix in MODEL_SLOTS:
             mid = o.get(key)
             if mid is None: continue
+            if key in ('manwear', 'womanwear') and 'head' in r['wearpos']:
+                ext = model_extent(st.read(7, mid))
+                if ext and min(ext) <= 4:
+                    warnings.append(f'{r["name"]}: {key} model {mid} is FLAT ({ext[0]}x{ext[1]}x'
+                                    f'{ext[2]}) but wearpos hides "head". A flat face plate needs '
+                                    f'the head visible behind it - hiding it deletes the head. '
+                                    f'Use hat/jaw instead (cf. slayer_facemask).')
             local = model_names.get(mid)
             if local is None:
                 local = f'obj_{r["base"]}{suffix}'
@@ -103,12 +167,17 @@ def main():
 
         for idx, txt in sorted(o.get('iops', {}).items()): lines.append(f'iop{idx+1}={txt}')
         for idx, txt in sorted(o.get('ops', {}).items()):  lines.append(f'op{idx+1}={txt}')
-        lines.append(f'wearpos={r["wearpos"]}')
+        for wi, w in enumerate(r['wearpos']):
+            lines.append(f'wearpos{"" if wi == 0 else wi + 1}={w}')
         if o.get('cost') is not None: lines.append(f'cost={o["cost"]}')
         if o.get('members'): lines.append('members=yes')
         if o.get('stackable'): lines.append('stackable=yes')
         if not o.get('tradeable'): lines.append('tradeable=no')
         lines.append('// TODO by hand: weight, category, param= combat bonuses, equip requirement')
+        if len(r['wearpos']) == 1 and r['wearpos'][0] in ('hat', 'torso'):
+            warnings.append(f'{r["name"]}: wearpos is bare "{r["wearpos"][0]}" - it will hide '
+                            f'nothing. Full helms want hat/head/jaw, hoods hat/head, '
+                            f'sleeved bodies torso/arms. Verify this is intentional.')
         blocks.append('\n'.join(lines))
 
     text = ('// Imported from the rev 474 cache by tools/models/import474.py\n'
