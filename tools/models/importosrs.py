@@ -74,7 +74,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('cache')
     ap.add_argument('--item', action='append', default=[],
-                    help='cache item name, optionally name=local_name')
+                    help='cache item name (or id:<obj id>), optionally name=local_name')
     ap.add_argument('--batch', default=None,
                     help='file of "Cache Name=local_name" lines; # comments allowed')
     ap.add_argument('--dir', required=True, help='content/scripts/<area>; configs/ written under it')
@@ -112,9 +112,17 @@ def main():
     for spec in items:
         cache_name, _, local = spec.partition('=')
         key = cache_name.lower()
-        if key not in named:
+        if key.startswith('id:'):
+            # "id:<obj id>=local" picks an exact cache record - needed when two items share a
+            # name (the open looting bag is also called "Looting bag").
+            iid = int(key[3:])
+            if iid not in objs:
+                warnings.append(f'{cache_name}: no such obj id'); continue
+            o = objs[iid]
+        elif key not in named:
             warnings.append(f'{cache_name}: not found in the cache'); continue
-        iid, o = named[key]
+        else:
+            iid, o = named[key]
         local = local or ''.join(c if c.isalnum() else '_' for c in cache_name.lower()).strip('_')
 
         models = {}

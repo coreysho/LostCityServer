@@ -309,10 +309,13 @@ def main():
         if 'reachforward' in d: lines.append('reachforward=yes')             # op 4
         if 'priority' in d:     lines.append(f'priority={d["priority"]}')    # op 5
         if 'maxloops' in d:     lines.append(f'maxloops={d["maxloops"]}')    # op 8
-        if 'preanim_move' in d: lines.append(f'preanim_move={d["preanim_move"]}')    # op 9
-        if 'postanim_move' in d: lines.append(f'postanim_move={d["postanim_move"]}') # op 10
+        # ops 9-11: SeqConfig.ts takes these as names, not numbers
+        if 'preanim_move' in d:
+            lines.append('preanim_move=' + ['delaymove', 'delayanim', 'merge'][d['preanim_move']])
+        if 'postanim_move' in d:
+            lines.append('postanim_move=' + ['delaymove', 'abortanim', 'merge'][d['postanim_move']])
         if 'duplicatebehaviour' in d:
-            lines.append(f'duplicatebehaviour={d["duplicatebehaviour"]}')    # op 11
+            lines.append('duplicatebehaviour=' + ['0', 'reset', 'reset_loop'][d['duplicatebehaviour']])
         # ops 6/7 (replaceheldleft/right) are 474 OBJ ids and mean nothing here; ops 12/13
         # are animation sounds, which 377 seqs have no field for. Reported, not emitted.
         skipped = [k for k in ('replaceheldleft', 'replaceheldright', 'sounds', 'op12') if d.get(k)]

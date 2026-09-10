@@ -16,12 +16,24 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from osrsmodel import P, layout, version
 
 MAX_V = MAX_F = 4096          # dash3d/Model.java hard limits
-TEXTURED_HSL = 6070           # flat stand-in for a textured face; 377 has no texture here
+TEXTURED_HSL = 6070           # flat stand-in for a textured face whose texture 377 lacks
+MAX_TEX_TRIANGLES = 255       # .ob2 trailer stores the texture triangle count as a g1
+
+# OSRS texture ids whose image is pixel-identical to the 377 texture with the SAME id
+# (OSRS idx9 texture -> idx8 sprite vs content/textures/<texture.pack name>.png, compared
+# 2026-09-10). Faces using these stay textured; any other texture gets TEXTURED_HSL.
+# 40 is the animated lava (fire cape): OSRS animates it down at speed 2, exactly what the
+# 377 client's updateTextures() does for 40, so the flow matches too.
+SHARED_TEXTURES = frozenset({0, 2, 3, 4, 5, 6, 11, 13, 14, 15, 16, 18, 20, 22, 23, 24, 25, 27,
+                             31, 32, 35, 36, 37, 38, 39, 40, 44, 46, 47, 48, 49})
 
 
 # ------------------------------------------------------------------ decode
-def decode(b):
-    """Geometry out of an OSRS model. Returns None if the layout does not reconcile."""
+def decode(b, textures=SHARED_TEXTURES):
+    """Geometry out of an OSRS model. Returns None if the layout does not reconcile.
+
+    textures: OSRS texture ids to keep as real textures (same id in 377). Pass an empty set
+    for the old behaviour of flattening every textured face to TEXTURED_HSL."""
     L = layout(b)
     if L is None or L['walked'] != L['body']:
         return None
@@ -81,20 +93,61 @@ def decode(b):
 
     # Which faces are textured. v2 (old style): render type bit 2, colour holds the texture
     # id. v3: a separate faceTextures section, stored as texture+1 (0 = none).
+    # Texture coordinates: an index into the texture triangles (P, M, N vertex triples),
+    # or -1 for "map onto the face's own three vertices".
     tex = [False] * fc
+    tex_id = [-1] * fc
+    tex_coord = [-1] * fc
+    tris = []
     if L['ver'] == 2 and rtypes is not None:
         tex = [bool(t & 2) for t in rtypes]
+        for i in range(fc):
+            if tex[i]:
+                tex_id[i] = colours[i]; tex_coord[i] = rtypes[i] >> 2
+        tp = P(b, L['tex'])
+        tris = [(tp.g2(), tp.g2(), tp.g2()) for _ in range(L['tc'])]
     elif L['ver'] == 3 and L.get('has_ftex'):
         tp = P(b, L['ftexture'])
-        tex = [tp.g2() != 0 for _ in range(fc)]
+        tex_id = [tp.g2() - 1 for _ in range(fc)]
+        tex = [t != -1 for t in tex_id]
+        if L['tc'] > 0:
+            cp = P(b, L['texcoord'])
+            for i in range(fc):
+                if tex[i]: tex_coord[i] = cp.g1() - 1
+        kinds = list(b[:L['tc']])
+        tp = P(b, L['tex'])
+        # simple (type 0) triangles are stored first-come in their own section; complex
+        # ones (cylinder/cube/sphere projections) have no 377 equivalent
+        simple_tris = [(tp.g2(), tp.g2(), tp.g2()) for _ in range(L['simple'])]
+        it = iter(simple_tris)
+        tris = [next(it) if k == 0 else None for k in kinds]
 
-    # A textured face has no usable colour (377 has no texture for it), so it gets a flat
-    # stand-in. Everything else keeps its colour.
+    # Textures 377 shares keep their texture; the rest have no usable colour, so they get a
+    # flat stand-in. Everything else keeps its colour.
     textured = 0
     finfo = [0] * fc
+    out_tris = []                       # 377 texture triangles actually used
+    tri_map = {}                        # OSRS triangle index -> 377 index
     alpha = list(alpha) if alpha is not None else None
     for i in range(fc):
         if tex[i]:
+            t = (rtypes[i] & 3) if rtypes is not None else 0
+            if L['ver'] == 2:
+                t &= 1                  # v2: bit 1 is the texture flag itself, bit 0 = flat
+            a = alpha[i] if alpha is not None else 0
+            k = tex_coord[i]
+            tri = (fa[i], fb[i], fcc[i]) if k == -1 else (tris[k] if k < len(tris) else None)
+            keep = (tex_id[i] in textures and tri is not None and t in (0, 1)
+                    and a not in (254, 255))
+            if keep:
+                key = ('face', i) if k == -1 else ('tri', k)
+                if key not in tri_map:
+                    tri_map[key] = len(out_tris); out_tris.append(tri)
+                if len(out_tris) <= MAX_TEX_TRIANGLES:
+                    colours[i] = tex_id[i]
+                    finfo[i] = 2 | t | (tri_map[key] << 2)
+                    continue
+                out_tris.pop(); del tri_map[key]
             colours[i] = TEXTURED_HSL; textured += 1
             continue
         t = (rtypes[i] & 3) if rtypes is not None else 0
@@ -113,7 +166,7 @@ def decode(b):
 
     return dict(ver=L['ver'], vcount=vc, fcount=fc, vx=vx, vy=vy, vz=vz,
                 fa=fa, fb=fb, fc=fcc, colour=colours, alpha=alpha,
-                textured=textured, priority=L['pri'], pri=pri,
+                textured=textured, priority=L['pri'], pri=pri, tris=out_tris,
                 vlab=vlab, flab=flab, finfo=finfo if any(finfo) else None)
 
 
@@ -178,14 +231,20 @@ def encode(m, keep_alpha=True):
     if vlab is not None:  out += bytes(vlab)
     if alpha is not None:
         out += bytes(a & 0xFF for a in alpha)
+    tris = m.get('tris') or []
+    texb = bytearray()
+    for t in tris:
+        for v in t:
+            texb += bytes([(v >> 8) & 0xFF, v & 0xFF])
     out += fdata
     out += colours
+    out += texb
     out += xb + yb + zb
 
     trailer = bytearray()
     g2 = lambda v: bytes([(v >> 8) & 0xFF, v & 0xFF])
     trailer += g2(vc) + g2(fc)
-    trailer += bytes([0])                       # texture count
+    trailer += bytes([len(tris)])               # texture triangle count
     trailer += bytes([1 if finfo is not None else 0])
     trailer += bytes([255 if pri is not None else glob_pri])
     trailer += bytes([1 if alpha is not None else 0])
@@ -226,7 +285,7 @@ def parse_ob2(b):
     if f_alpha == 1: o += fc
     fdata_o = o; o += flen
     colour_o = o; o += fc * 2
-    o += tc * 6
+    tex_o = o; o += tc * 6
     x_o = o; o += xlen
     y_o = o; o += ylen
     z_o = o; o += zlen
@@ -260,7 +319,9 @@ def parse_ob2(b):
         elif t == 4:
             a, bb = bb, a; c = fd.gsmart() + trip; trip = c
         fa.append(a); fb.append(bb); fcc.append(c)
-    return dict(vcount=vc, fcount=fc, vx=vx, vy=vy, vz=vz,
+    tp = P(b, tex_o)
+    tris = [(tp.g2(), tp.g2(), tp.g2()) for _ in range(tc)]
+    return dict(vcount=vc, fcount=fc, vx=vx, vy=vy, vz=vz, tris=tris,
                 fa=fa, fb=fb, fc=fcc, colour=colour,
                 pri=list(b[pri_o:pri_o + fc]) if f_pri == 255 else [f_pri] * fc,
                 flab=list(b[flab_o:flab_o + fc]) if f_flab == 1 else None,
@@ -294,15 +355,17 @@ def roundtrip(ob2_bytes, m):
         return False, 'face labels differ'
     if (r['finfo'] or None) != (m.get('finfo') or None):
         return False, 'face info differs'
+    if r['tris'] != [tuple(t) for t in (m.get('tris') or [])]:
+        return False, 'texture triangles differ'
     ma = m['alpha'] if (m.get('alpha') and any(m['alpha'])) else None
     if (r['alpha'] or None) != ma:
         return False, 'alpha differs'
     return True, 'ok'
 
 
-def convert_checked(b):
+def convert_checked(b, textures=SHARED_TEXTURES):
     """Decode, encode, and verify in one call. Returns (ob2_bytes, model, reason)."""
-    m = decode(b)
+    m = decode(b, textures)
     if m is None: return None, None, 'layout does not reconcile'
     ob2 = encode(m)
     ok, why = roundtrip(ob2, m)

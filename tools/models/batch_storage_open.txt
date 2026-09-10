@@ -1,0 +1,4 @@
+# Open variants of the storage items - Open/Close swaps between the two, as in OSRS.
+id:24478=herb_sack_open
+id:24482=seed_box_open
+id:22586=looting_bag_open

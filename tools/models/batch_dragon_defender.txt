@@ -1,0 +1,2 @@
+# OSRS dragon defender (obj 12954)
+id:12954=dragon_defender
