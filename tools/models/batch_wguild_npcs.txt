@@ -1,0 +1,26 @@
+# Warriors' Guild npcs (OSRS ids). Cyclopes use the OSRS giant-update animations.
+2463 wguild_cyclops_1 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2464 wguild_cyclops_2 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2465 wguild_cyclops_3 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2466 wguild_cyclops_4 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2467 wguild_cyclops_5 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2468 wguild_cyclops_6 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2137 wguild_cyclops_basement_1 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2138 wguild_cyclops_basement_2 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2139 wguild_cyclops_basement_3 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2140 wguild_cyclops_basement_4 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2141 wguild_cyclops_basement_5 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2142 wguild_cyclops_basement_6 ready=osrs:4650 walk=osrs:4649 attack=osrs:4652 defend=osrs:4651 death=osrs:4653
+2450 wguild_armour_bronze ready=human_ready walk=human_walk_f attack=human_unarmedpunch defend=human_unarmedblock death=human_death
+2451 wguild_armour_iron ready=human_ready walk=human_walk_f attack=human_unarmedpunch defend=human_unarmedblock death=human_death
+2452 wguild_armour_steel ready=human_ready walk=human_walk_f attack=human_unarmedpunch defend=human_unarmedblock death=human_death
+2453 wguild_armour_black ready=human_ready walk=human_walk_f attack=human_unarmedpunch defend=human_unarmedblock death=human_death
+2454 wguild_armour_mithril ready=human_ready walk=human_walk_f attack=human_unarmedpunch defend=human_unarmedblock death=human_death
+2455 wguild_armour_adamant ready=human_ready walk=human_walk_f attack=human_unarmedpunch defend=human_unarmedblock death=human_death
+2456 wguild_armour_rune ready=human_ready walk=human_walk_f attack=human_unarmedpunch defend=human_unarmedblock death=human_death
+2461 wguild_kamfreena ready=barrow_dharok_ready walk=barrow_dharok_walk
+2135 wguild_lorelai ready=human_ready walk=human_walk_f
+13613 wguild_ghommal ready=human_ready walk=human_walk_f
+13615 wguild_harrallak ready=human_ready walk=human_walk_f
+2462 wguild_shanomi ready=human_dh_weapon_ready walk=human_dh_weapon_walk
+2472 wguild_jade ready=human_ready walk=human_walk_f

@@ -1,0 +1,24 @@
+# Extra config for the Warriors' Guild locs imported by importosrsmap.py (--loc-props).
+# Ordinary doors: the standard door system (doors/scripts/doors.rs2).
+1535 category=door_closed
+1535 param=next_loc_stage,osrsloc_1536
+1536 category=door_opened
+1536 param=next_loc_stage,osrsloc_1535
+3745 category=door_open_and_close
+3745 param=next_loc_stage,osrsloc_1536
+3746 category=door_open_and_close
+3746 param=next_loc_stage,osrsloc_1536
+# Guild doors: walked through (opened for 3 ticks); the gated ones have their own scripts in
+# game_warriorsguild/scripts/wguild_doors.rs2, the rest use the category.
+24318 param=next_loc_stage,osrsloc_24319
+24306 param=next_loc_stage,osrsloc_24307
+24309 param=next_loc_stage,osrsloc_24310
+10043 param=next_loc_stage,osrsloc_10044
+24312 category=door_open_and_close
+24312 param=next_loc_stage,osrsloc_24313
+24315 category=door_open_and_close
+24315 param=next_loc_stage,osrsloc_24316
+15658 category=door_open_and_close
+15658 param=next_loc_stage,osrsloc_15659
+15660 category=door_open_and_close
+15660 param=next_loc_stage,osrsloc_15661

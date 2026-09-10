@@ -1,0 +1,2 @@
+# Warrior guild token (OSRS obj 8851)
+id:8851=warrior_guild_token
