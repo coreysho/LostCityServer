@@ -1,0 +1,8 @@
+# Props held in the OSRS skillcape emotes (seq replaceheldleft/right); never obtainable.
+id:9893=skillcape_prop_herblore
+id:9894=skillcape_prop_crafting_r
+id:9895=skillcape_prop_crafting_l
+id:9896=skillcape_prop_cooking
+id:9897=skillcape_prop_woodcutting
+id:9898=skillcape_prop_defence_l
+id:9899=skillcape_prop_defence_r

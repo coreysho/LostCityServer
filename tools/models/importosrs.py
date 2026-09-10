@@ -144,7 +144,8 @@ def main():
             continue
 
         lines.append(f'[{local}]')
-        lines.append(f'name={o["name"]}')
+        if o.get('name') and o['name'] != 'null':
+            lines.append(f'name={o["name"]}')   # unnamed props (emote-only items) keep the default
         if o.get('desc'): lines.append(f'desc={o["desc"]}')
         lines.append(f'model=obj_{local}')
         if 'manwear' in models:
@@ -182,7 +183,7 @@ def main():
         lines.append('')
         for name, ob2, m in models.values():
             to_write[name] = ob2
-        print(f'{o["name"]:<24} obj {iid:<6} {len(models)} model(s), '
+        print(f'{(o.get("name") or local):<24} obj {iid:<6} {len(models)} model(s), '
               f'{sum(m["vcount"] for _, _, m in models.values())} verts total')
 
     for w in warnings:

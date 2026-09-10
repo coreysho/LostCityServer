@@ -1,0 +1,5 @@
+# Skillcape sellers missing from the 377 cache (OSRS ids)
+13558 skillcape_sloane ready=human_ready walk=human_walk_f
+3216 skillcape_harlan ready=human_ready walk=human_walk_f
+3226 skillcape_wilfred ready=human_ready walk=human_walk_f
+118 skillcape_ignatius ready=human_ready walk=human_walk_f
