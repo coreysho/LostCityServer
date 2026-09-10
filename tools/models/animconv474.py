@@ -113,19 +113,28 @@ def emit_377_base(size, types, counts, labels):
     return bytes(o)
 
 G2_MAX = 65535
+# The client inflates every on-demand file into OnDemand.data, a fixed byte[65000], and throws
+# "buffer overflow!" when it fills - which surfaces as "loaderror Requesting animations 65".
+# K'ril's group 1208 came out at 86,862 bytes and did exactly that. Keep every set well under.
+BLOB_MAX = 60000
 
-def split_for_sets(frames):
+def split_for_sets(frames, base_len=0):
     """Chunk frames so every 377 .anim section length fits in its g2.
 
     18 of 474's 1,846 frame groups exceed this - the big ones run to 1,785 frames and a flags
     section of 167KB against a 65,535 ceiling. A 377 set is just a container, so an oversized
     group becomes several sets, each with its own copy of the base. Frames keep their global ids,
-    so seq references are unaffected."""
+    so seq references are unaffected.
+
+    Also splits on total blob size (BLOB_MAX): head + tran1 + tran2 + del + base + 8-byte footer."""
+    fixed = 2 + base_len + 8
     out = []; cur = []; h = t1 = t2 = 0
     for f in frames:
         _, n, flags, vals = f
         nh, nt1, nt2 = h + 3, t1 + len(flags), t2 + len(vals)
-        if cur and (nh > G2_MAX or nt1 > G2_MAX or nt2 > G2_MAX or len(cur) + 1 > G2_MAX):
+        total = fixed + nh + nt1 + nt2 + len(cur) + 1          # +1 del byte per frame
+        if cur and (nh > G2_MAX or nt1 > G2_MAX or nt2 > G2_MAX or len(cur) + 1 > G2_MAX
+                    or total > BLOB_MAX):
             out.append(cur); cur = []; h = t1 = t2 = 0
             nh, nt1, nt2 = 3, len(flags), len(vals)
         cur.append(f); h, t1, t2 = nh, nt1, nt2
@@ -263,13 +272,15 @@ def main():
             raise SystemExit('frame id exceeded 65535 - the .anim head writes it as g2')
 
         tagged = [(frame_id_map[(g, fi)], n, fl, vs) for fi, n, fl, vs in c['frames']]
-        chunks = split_for_sets(tagged)
+        chunks = split_for_sets(tagged, len(c['base']))
         if len(chunks) > 1:
-            print(f'#   group {g} exceeds a 377 section limit - split across {len(chunks)} sets')
+            print(f'#   group {g} exceeds a 377 size limit - split across {len(chunks)} sets')
         for k, chunk in enumerate(chunks):
             # Named after the 474 group, not a running counter, so re-running the tool
             # reuses the same set instead of writing a duplicate beside the old one.
-            set_name = f'anim_474_{g}' + (f'_{k+1}' if len(chunks) > 1 else '')
+            # First chunk keeps the plain name, later ones get _2, _3... (matches the hand
+            # split of anim_474_1208 -> anim_474_1208 + anim_474_1208_2).
+            set_name = f'anim_474_{g}' + (f'_{k+1}' if k > 0 else '')
             pack_append(animset_pack, [set_name])
             pack_append(base_pack, [set_name.replace('anim_', 'base_', 1)])
             blob = build_377_anim(chunk, c['base'])
@@ -280,6 +291,7 @@ def main():
                 assert gid == fid and gn == n and gfl == fl and gvs == vs, \
                     f'round-trip mismatch on group {g} frame {fid}'
             assert gotbase == c['base'], 'base lost'
+            assert len(blob) < 65000, f'{set_name} is {len(blob)} bytes - client buffer is 65000'
             open(os.path.join(C, 'models', f'{set_name}.anim'), 'wb').write(blob)
             print(f'#   wrote models/{set_name}.anim  ({len(blob)} bytes, {len(chunk)} frames, '
                   f'ids {chunk[0][0]}-{chunk[-1][0]}) - round-trip verified')

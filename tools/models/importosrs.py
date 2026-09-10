@@ -151,8 +151,11 @@ def main():
             v = o.get(k)
             if v is not None and 0 <= v < len(WEARPOS):
                 lines.append(f'{k}={WEARPOS[v]}')
-        for k in ('zoom2d', 'xan2d', 'yan2d', 'zan2d', 'xof2d', 'yof2d'):
-            if o.get(k) is not None: lines.append(f'{k}={o[k]}')
+        # Lost City's obj packer spells these 2dzoom/2dxan/... - the decoder's
+        # zoom2d/xan2d names are rejected with "Invalid property key".
+        for cfg, k in (('2dzoom', 'zoom2d'), ('2dxan', 'xan2d'), ('2dyan', 'yan2d'),
+                       ('2dzan', 'zan2d'), ('2dxof', 'xof2d'), ('2dyof', 'yof2d')):
+            if o.get(k) is not None: lines.append(f'{cfg}={o[k]}')
         for n, (src, dst) in enumerate(o.get('recol') or [], start=1):
             sv, ok1 = hsl16_to_rgb15(src)
             dv, ok2 = hsl16_to_rgb15(dst)
