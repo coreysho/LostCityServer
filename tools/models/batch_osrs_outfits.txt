@@ -1,0 +1,60 @@
+# Skilling outfits, from the OSRS cache. Lumberjack is deliberately absent - it is
+# already in the build from the 474 import.
+# Mining
+Prospector helmet=prospector_helm
+Prospector jacket=prospector_jacket
+Prospector legs=prospector_legs
+Prospector boots=prospector_boots
+# Fishing
+Angler hat=angler_hat
+Angler top=angler_top
+Angler waders=angler_waders
+Angler boots=angler_boots
+# Farming
+Farmer's strawhat=farmers_strawhat
+Farmer's jacket=farmers_jacket
+Farmer's boro trousers=farmers_trousers
+Farmer's boots=farmers_boots
+# Construction
+Carpenter's helmet=carpenters_helm
+Carpenter's shirt=carpenters_shirt
+Carpenter's trousers=carpenters_trousers
+Carpenter's boots=carpenters_boots
+# Agility
+Graceful hood=graceful_hood
+Graceful cape=graceful_cape
+Graceful top=graceful_top
+Graceful legs=graceful_legs
+Graceful gloves=graceful_gloves
+Graceful boots=graceful_boots
+# Firemaking
+Pyromancer hood=pyromancer_hood
+Pyromancer garb=pyromancer_garb
+Pyromancer robe=pyromancer_robe
+Pyromancer boots=pyromancer_boots
+# Thieving
+Rogue mask=rogue_mask
+Rogue top=rogue_top
+Rogue trousers=rogue_trousers
+Rogue gloves=rogue_gloves
+Rogue boots=rogue_boots
+# Prayer
+Zealot's helm=zealots_helm
+Zealot's robe top=zealots_top
+Zealot's robe bottom=zealots_bottom
+Zealot's boots=zealots_boots
+# Runecraft
+Hat of the Eye=eye_hat
+Robe top of the Eye=eye_top
+Robe bottoms of the Eye=eye_bottoms
+Boots of the Eye=eye_boots
+# Hunter
+Guild hunter headwear=hunter_headwear
+Guild hunter top=hunter_top
+Guild hunter legs=hunter_legs
+Guild hunter boots=hunter_boots
+# Smithing
+Smiths tunic=smiths_tunic
+Smiths trousers=smiths_trousers
+Smiths boots=smiths_boots
+Smiths gloves=smiths_gloves

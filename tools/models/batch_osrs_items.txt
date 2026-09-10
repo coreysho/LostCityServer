@@ -1,0 +1,8 @@
+# The original wishlist items that 474 could not supply.
+Slayer helmet=slayer_helm
+Dragon pickaxe=dragon_pickaxe
+Herb sack=herb_sack
+Seed box=seed_box
+Looting bag=looting_bag
+Magic secateurs=magic_secateurs
+Imbued heart=imbued_heart

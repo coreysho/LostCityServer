@@ -22,38 +22,55 @@ def name_hash(n):
     return h if h < 0x80000000 else h - 0x100000000
 
 class RefTable:
-    def __init__(s, data):
+    """idx255 reference table, protocols 5-7.
+
+    Flag bits (protocol 6+): 1 = name hashes, 2 = whirlpool digests (64 bytes),
+    4 = compressed+uncompressed lengths (two ints), 8 = uncompressed checksums (one int).
+    474 uses protocol 6 with flags 0; the OSRS cache uses protocol 7 with flags 12/13.
+    The parse is checked against the table length - a wrong flag order still yields
+    plausible group counts, so anything that does not consume exactly is rejected.
+    """
+    def __init__(s, data, strict=True):
         r = R(data)
         s.protocol = r.g1()
         s.revision = r.g4() if s.protocol >= 6 else 0
         s.flags = r.g1()
-        n = r.gsmart() if s.protocol >= 7 else r.g2()
+        smart = (lambda: r.gsmart()) if s.protocol >= 7 else (lambda: r.g2())
+        n = smart()
         s.group_ids = []
         acc = 0
         for _ in range(n):
-            acc += r.gsmart() if s.protocol >= 7 else r.g2()
+            acc += smart()
             s.group_ids.append(acc)
         s.group_names = {}
         if s.flags & 1:
             for g in s.group_ids: s.group_names[g] = r.g4()
         for _ in s.group_ids: r.g4()                       # crcs
+        if s.flags & 8:
+            for _ in s.group_ids: r.g4()                   # uncompressed crcs
         if s.flags & 2:
             for _ in s.group_ids: r.p += 64                # whirlpool
+        if s.flags & 4:
+            for _ in s.group_ids: r.g4(); r.g4()           # compressed + uncompressed length
         for _ in s.group_ids: r.g4()                       # versions
         s.file_counts = {}
         for g in s.group_ids:
-            s.file_counts[g] = r.gsmart() if s.protocol >= 7 else r.g2()
+            s.file_counts[g] = smart()
         s.file_ids = {}
         for g in s.group_ids:
             acc = 0; ids = []
             for _ in range(s.file_counts[g]):
-                acc += r.gsmart() if s.protocol >= 7 else r.g2()
+                acc += smart()
                 ids.append(acc)
             s.file_ids[g] = ids
         s.file_names = {}
         if s.flags & 1:
             for g in s.group_ids:
                 s.file_names[g] = [r.g4() for _ in s.file_ids[g]]
+        s.tail = len(data) - r.p
+        if strict and s.tail != 0:
+            raise ValueError(f'reference table did not consume exactly: {s.tail} bytes left '
+                             f'(protocol {s.protocol}, flags {s.flags})')
 
     def group_by_name(s, name):
         h = name_hash(name) & 0xffffffff
