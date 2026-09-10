@@ -63,11 +63,22 @@ def main():
     a = ap.parse_args()
 
     st = Store(a.cache)
-    seqs = load_osrs_seqs(st)
     names = {}
     for spec in a.seq:
         sid, _, nm = str(spec).partition(':')
         names[int(sid)] = nm or f'seq_osrs_{int(sid)}'
+    text = convert_seqs(st, names, None if a.dry_run else a.content)
+    if text is None: return
+    if a.out:
+        open(a.out, 'w', newline='').write(text); print(f'#   wrote {a.out}')
+    else:
+        print(text)
+
+def convert_seqs(st, names, content):
+    """Convert OSRS seqs {id: local name}. Writes .anim sets and pack entries under `content`
+    (None = dry run, returns None) and returns the .seq config text (CRLF)."""
+    a = argparse.Namespace(content=content, dry_run=content is None)
+    seqs = load_osrs_seqs(st)
 
     wanted = {}
     for sid in names:
@@ -111,7 +122,7 @@ def main():
         for sid, d in wanted.items():
             print(f'#   seq {sid} {names[sid]}: {len(d["frames"])} frames, '
                   f'{ {k: v for k, v in d.items() if k not in ("frames", "delays")} }')
-        print('# dry run - nothing written'); return
+        print('# dry run - nothing written'); return None
 
     C = a.content
     anim_pack = os.path.join(C, 'pack', 'anim.pack')
@@ -169,11 +180,7 @@ def main():
             lines.append(f'delay{n}={dl}')
         lines.append('')
     pack_append(seq_pack, [names[sid] for sid in wanted])
-    text = '\r\n'.join(lines)
-    if a.out:
-        open(a.out, 'w', newline='').write(text); print(f'#   wrote {a.out}')
-    else:
-        print(text)
+    return '\r\n'.join(lines)
 
 if __name__ == '__main__':
     main()
