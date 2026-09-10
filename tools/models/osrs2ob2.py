@@ -67,17 +67,54 @@ def decode(b):
         ap = P(b, L['falpha'])
         alpha = [ap.g1() for _ in range(fc)]
 
-    # A face whose render type has bit 2 set had its colour overwritten with the texture
-    # id (the original colour is simply not in the file), so it gets a flat stand-in.
+    # Per-face draw priorities. Dropping these (writing one global 0) made every imported
+    # worn model draw BEFORE the player's torso (priority 2-3), so the torso painted over
+    # the slayer helmet's face. Keep them exactly: 377 and OSRS use the same 0-11 scheme.
+    pri = list(b[L['fpri']:L['fpri'] + fc]) if L['has_pri'] else None
+
+    # Vertex labels (OSRS "packedVertexGroups"): which skeleton group each vertex follows.
+    # Without them a worn model never moves with the player's animations. OSRS player
+    # labels are identical to 377's (checked on rune helm/body/legs: same label sets).
+    vlab = list(b[L['vgroup']:L['vgroup'] + vc]) if L['has_vgroup'] else None
+    # Face labels (OSRS "packedTransparencyVertexGroups"): used by alpha animations.
+    flab = list(b[L['tskin']:L['tskin'] + fc]) if L.get('has_tskin') else None
+
+    # Which faces are textured. v2 (old style): render type bit 2, colour holds the texture
+    # id. v3: a separate faceTextures section, stored as texture+1 (0 = none).
+    tex = [False] * fc
+    if L['ver'] == 2 and rtypes is not None:
+        tex = [bool(t & 2) for t in rtypes]
+    elif L['ver'] == 3 and L.get('has_ftex'):
+        tp = P(b, L['ftexture'])
+        tex = [tp.g2() != 0 for _ in range(fc)]
+
+    # A textured face has no usable colour (377 has no texture for it), so it gets a flat
+    # stand-in. Everything else keeps its colour.
     textured = 0
-    if rtypes is not None:
-        for i, t in enumerate(rtypes):
-            if t & 2:
-                colours[i] = TEXTURED_HSL; textured += 1
+    finfo = [0] * fc
+    alpha = list(alpha) if alpha is not None else None
+    for i in range(fc):
+        if tex[i]:
+            colours[i] = TEXTURED_HSL; textured += 1
+            continue
+        t = (rtypes[i] & 3) if rtypes is not None else 0
+        a = alpha[i] if alpha is not None else 0
+        # OSRS Model.light(): alpha -1 (255) forces type 2, alpha -2 (254) forces type 3.
+        if a == 254: t = 3
+        if a == 255: t = 2
+        if t == 1:
+            finfo[i] = 1                           # flat shaded
+        elif t == 2:                               # OSRS: faceColors3 = -2, never drawn
+            if alpha is None: alpha = [0] * fc
+            alpha[i] = 255
+        elif t == 3:                               # OSRS: flat, colour 128
+            finfo[i] = 1; colours[i] = 128
+            if alpha is not None: alpha[i] = 0
 
     return dict(ver=L['ver'], vcount=vc, fcount=fc, vx=vx, vy=vy, vz=vz,
                 fa=fa, fb=fb, fc=fcc, colour=colours, alpha=alpha,
-                textured=textured, priority=L['pri'])
+                textured=textured, priority=L['pri'], pri=pri,
+                vlab=vlab, flab=flab, finfo=finfo if any(finfo) else None)
 
 
 # ------------------------------------------------------------------ encode
@@ -122,6 +159,12 @@ def encode(m, keep_alpha=True):
         colours += bytes([(v >> 8) & 0xFF, v & 0xFF])
 
     alpha = m['alpha'] if (keep_alpha and m['alpha'] and any(m['alpha'])) else None
+    pri = m.get('pri')
+    if pri is not None and len(set(pri)) == 1:
+        glob_pri, pri = pri[0], None               # uniform -> global, like the source
+    else:
+        glob_pri = m.get('priority', 0) if m.get('priority', 0) != 255 else 0
+    flab = m.get('flab'); vlab = m.get('vlab'); finfo = m.get('finfo')
 
     # Section order is Model.java's walk, not the trailer's flag order:
     # vflags, ftypes, [priorities], [face labels], [face info], [vertex labels],
@@ -129,6 +172,10 @@ def encode(m, keep_alpha=True):
     out = bytearray()
     out += vflags
     out += ftypes
+    if pri is not None:   out += bytes(pri)
+    if flab is not None:  out += bytes(flab)
+    if finfo is not None: out += bytes(finfo)
+    if vlab is not None:  out += bytes(vlab)
     if alpha is not None:
         out += bytes(a & 0xFF for a in alpha)
     out += fdata
@@ -139,11 +186,11 @@ def encode(m, keep_alpha=True):
     g2 = lambda v: bytes([(v >> 8) & 0xFF, v & 0xFF])
     trailer += g2(vc) + g2(fc)
     trailer += bytes([0])                       # texture count
-    trailer += bytes([0])                       # no face info section
-    trailer += bytes([0])                       # global priority 0 (not per-face)
+    trailer += bytes([1 if finfo is not None else 0])
+    trailer += bytes([255 if pri is not None else glob_pri])
     trailer += bytes([1 if alpha is not None else 0])
-    trailer += bytes([0])                       # no face labels
-    trailer += bytes([0])                       # no vertex labels
+    trailer += bytes([1 if flab is not None else 0])
+    trailer += bytes([1 if vlab is not None else 0])
     trailer += g2(len(xb)) + g2(len(yb)) + g2(len(zb)) + g2(len(fdata))
     return bytes(out + trailer)
 
@@ -167,10 +214,15 @@ def parse_ob2(b):
     o = 0
     vflag_o = o; o += vc
     ftype_o = o; o += fc
+    pri_o = o
     if f_pri == 255: o += fc
+    flab_o = o
     if f_flab == 1: o += fc
+    finfo_o = o
     if f_tex == 1:  o += fc
+    vlab_o = o
     if f_vlab == 1: o += vc
+    alpha_o = o
     if f_alpha == 1: o += fc
     fdata_o = o; o += flen
     colour_o = o; o += fc * 2
@@ -209,7 +261,12 @@ def parse_ob2(b):
             a, bb = bb, a; c = fd.gsmart() + trip; trip = c
         fa.append(a); fb.append(bb); fcc.append(c)
     return dict(vcount=vc, fcount=fc, vx=vx, vy=vy, vz=vz,
-                fa=fa, fb=fb, fc=fcc, colour=colour)
+                fa=fa, fb=fb, fc=fcc, colour=colour,
+                pri=list(b[pri_o:pri_o + fc]) if f_pri == 255 else [f_pri] * fc,
+                flab=list(b[flab_o:flab_o + fc]) if f_flab == 1 else None,
+                finfo=list(b[finfo_o:finfo_o + fc]) if f_tex == 1 else None,
+                vlab=list(b[vlab_o:vlab_o + vc]) if f_vlab == 1 else None,
+                alpha=list(b[alpha_o:alpha_o + fc]) if f_alpha == 1 else None)
 
 
 def roundtrip(ob2_bytes, m):
@@ -228,6 +285,18 @@ def roundtrip(ob2_bytes, m):
             return False, f'face {i} differs'
         if r['colour'][i] != m['colour'][i]:
             return False, f'colour {i} differs'
+    want_pri = m['pri'] if m.get('pri') is not None else [m.get('priority', 0) if m.get('priority', 0) != 255 else 0] * m['fcount']
+    if r['pri'] != want_pri:
+        return False, 'priorities differ'
+    if (r['vlab'] or None) != (m.get('vlab') or None):
+        return False, 'vertex labels differ'
+    if (r['flab'] or None) != (m.get('flab') or None):
+        return False, 'face labels differ'
+    if (r['finfo'] or None) != (m.get('finfo') or None):
+        return False, 'face info differs'
+    ma = m['alpha'] if (m.get('alpha') and any(m['alpha'])) else None
+    if (r['alpha'] or None) != ma:
+        return False, 'alpha differs'
     return True, 'ok'
 
 

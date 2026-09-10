@@ -1,0 +1,25 @@
+# God Wars Dungeon - generals' uniques
+Bandos chestplate=bandos_chestplate
+Bandos tassets=bandos_tassets
+Bandos boots=bandos_boots
+Bandos hilt=bandos_hilt
+Armadyl helmet=armadyl_helmet
+Armadyl chestplate=armadyl_chestplate
+Armadyl chainskirt=armadyl_chainskirt
+Armadyl hilt=armadyl_hilt
+Saradomin sword=saradomin_sword
+Saradomin hilt=saradomin_hilt
+Zamorakian spear=zamorakian_spear
+Zamorak hilt=zamorak_hilt
+# Godsword pieces and the four godswords
+Godsword shard 1=godsword_shard_1
+Godsword shard 2=godsword_shard_2
+Godsword shard 3=godsword_shard_3
+Godsword shards 1 & 2=godsword_shards_1_2
+Godsword shards 1 & 3=godsword_shards_1_3
+Godsword shards 2 & 3=godsword_shards_2_3
+Godsword blade=godsword_blade
+Armadyl godsword=armadyl_godsword
+Bandos godsword=bandos_godsword
+Saradomin godsword=saradomin_godsword
+Zamorak godsword=zamorak_godsword

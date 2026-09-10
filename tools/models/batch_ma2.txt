@@ -1,0 +1,4 @@
+# Mage Arena II (arena-rematch design) - imbued god capes
+Imbued saradomin cape=imbued_saradomin_cape
+Imbued guthix cape=imbued_guthix_cape
+Imbued zamorak cape=imbued_zamorak_cape

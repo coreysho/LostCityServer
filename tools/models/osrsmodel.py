@@ -67,6 +67,7 @@ def _layout2(b):
                 vflag=vflag, ftype=ftype, fpri=fpri, frt=frt, falpha=falpha,
                 fdata=fdata, colour=colour, tex=tex, xo=xo, yo=yo, zo=zo,
                 vgroup=misc, has_vgroup=f_vgroup == 1,
+                tskin=tskin, has_tskin=f_tskin == 1, has_ftex=False,
                 has_rtype=f_rtype == 1, has_pri=pri == 255, pri=pri,
                 has_alpha=f_alpha == 1, has_zoff=has_zoff)
 
@@ -122,6 +123,7 @@ def _layout3(b):
                 fdata=fdata, colour=colour, tex=tex, xo=xo, yo=yo, zo=zo,
                 vgroup=vgroups, texcoord=texcoord, ftexture=ftexture,
                 has_vgroup=f_vgroup == 1,
+                tskin=tskin, has_tskin=f_tskin == 1, has_ftex=f_texcoord == 1,
                 has_rtype=f_rtype == 1, has_pri=pri == 255, pri=pri,
                 has_alpha=f_alpha == 1, has_zoff=has_zoff,
                 simple=simple, complexn=complexn)
