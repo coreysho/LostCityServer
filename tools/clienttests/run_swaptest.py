@@ -27,7 +27,11 @@ SPAN_START = '\t/** Rule a beats rule b'
 SPAN_END = '\tprivate int swapPanelHeight() {'
 # Constants the extracted methods use that live up with the other fields. Pulled across too rather
 # than retyped in the harness, so a change to one cannot pass a test that still asserts the old value.
-CONSTANTS = ['\tprivate static final int WALK_HERE_ACTION = 14;']
+CONSTANTS = ['\tprivate static final int WALK_HERE_ACTION = 14;',
+             '\tprivate static final int SWAP_ROW_SET = 0;',
+             '\tprivate static final int SWAP_ROW_RESET = 1;',
+             '\tprivate static final int SWAP_ROW_HIDE = 2;',
+             '\tprivate static final int SWAP_ROW_HIGHLIGHT = 3;']
 
 
 def extract(client_java):

@@ -1,5 +1,7 @@
 
 import java.util.*;
+import jagex2.client.GameShell;
+import jagex2.client.GroundItemPrefs;
 
 /**
  * Harness for Client.drawGroundItems(). The method body below is extracted verbatim from
@@ -7,7 +9,13 @@ import java.util.*;
  * Everything it touches (projection, fonts, the obj cache, the player) is stubbed so the merge,
  * value and layout logic can be run headless.
  */
-public class GroundItemsTest {
+/** Stands in for GameShell, which the extracted code reaches through `super`. */
+class Shell {
+	int[] actionKey = new int[128];
+	int mouseClickX, mouseClickY;
+}
+
+public class GroundItemsTest extends Shell {
 
 	// ---- stubs -------------------------------------------------------------------------------
 	static class ObjType {
@@ -25,9 +33,16 @@ public class GroundItemsTest {
 	}
 	static class ClientPlayer { int field1157, field1158; }
 	static class Font {
+		int height = 11;
+		// Every glyph 5px wide keeps the expected layout arithmetic doable by hand in the assertions.
+		int stringWid(String s) { return s == null ? 0 : s.length() * 5; }
 		void centreString(int x, int y, int colour, String s) { drawn.add(x + "," + y + "," + Integer.toHexString(colour) + "," + s); }
+		void drawString(int x, int colour, int y, String s) { pieces.add(x + "," + y + "," + Integer.toHexString(colour) + "," + s); }
 	}
 	static List<String> drawn = new ArrayList<>();
+	static List<String> pieces = new ArrayList<>();   // drawString calls, used by the Alt layout
+	static List<String> messages = new ArrayList<>();
+	void addMessage(String from, String text, int type) { messages.add(text); }
 
 	static ClientPlayer localPlayer;
 	LinkList[][][] objStacks = new LinkList[4][104][104];
@@ -67,11 +82,19 @@ __BODY__
 		localPlayer.field1157 = (px << 7) + 64;
 		localPlayer.field1158 = (pz << 7) + 64;
 		drawn.clear();
+		pieces.clear();
+		messages.clear();
 		ObjType.getCalls = 0;
 		return c;
 	}
 
+	static void wipePrefs() {
+		new java.io.File(sign.signlink.findcachedir() + "qol_grounditems.dat").delete();
+		GroundItemPrefs.load();
+	}
+
 	public static void main(String[] args) {
+		wipePrefs();
 		obj(526, "Bones", 1, false);
 		obj(995, "Coins", 1, true);
 		obj(1050, "Santa hat", 12000000, false);
@@ -182,6 +205,168 @@ __BODY__
 		check(drawn.get(1).endsWith("Coins x 7") && drawn.get(3).endsWith("Coins x 3"),
 			"counts do not leak between tiles, got " + drawn.get(1) + " / " + drawn.get(3));
 
+		System.out.println("the radius comes from the player's settings");
+		wipePrefs();
+		c = fresh(50, 50);
+		c.put(50 + 12, 50, 526, 1);
+		c.drawGroundItems();
+		check(drawn.size() == 2, "default radius 12 still reaches 12 tiles, got " + drawn.size() / 2);
+		for (int i = 0; i < 7 && GroundItemPrefs.radius() != 8; i++) { GroundItemPrefs.cycleRadius(); }
+		check(GroundItemPrefs.radius() == 8, "cycled down to 8, got " + GroundItemPrefs.radius());
+		c = fresh(50, 50);
+		c.put(50 + 12, 50, 526, 1);
+		c.put(50 + 8, 50, 526, 1);
+		c.drawGroundItems();
+		check(drawn.size() == 2, "at radius 8 the tile 12 away is gone, the one at 8 is not; got " + drawn.size() / 2);
+		wipePrefs();
+
+		System.out.println("the value floor");
+		c = fresh(50, 50);
+		c.put(50, 50, 526, 1);      // Bones, 1gp
+		c.put(51, 50, 1050, 1);     // Santa hat, 12m
+		c.drawGroundItems();
+		check(drawn.size() == 4, "floor off: both labelled, got " + drawn.size() / 2);
+		while (GroundItemPrefs.minValue() != 1000) { GroundItemPrefs.cycleMinValue(); }
+		c = fresh(50, 50);
+		c.put(50, 50, 526, 1);
+		c.put(51, 50, 1050, 1);
+		c.drawGroundItems();
+		check(drawn.size() == 2 && drawn.get(1).endsWith("Santa hat"),
+			"at 1k only the santa hat is labelled, got " + drawn);
+		wipePrefs();
+
+		System.out.println("hiding and highlighting");
+		c = fresh(50, 50);
+		GroundItemPrefs.toggle("Bones", GroundItemPrefs.HIDE);
+		c.put(50, 50, 526, 1);
+		c.put(51, 50, 995, 5);
+		c.drawGroundItems();
+		check(drawn.size() == 2 && drawn.get(1).endsWith("Coins x 5"), "bones hidden, coins not; got " + drawn);
+		check(GroundItemPrefs.isHidden("bones"), "matching is case-insensitive");
+		c = fresh(50, 50);
+		c.put(50, 50, 526, 60);
+		c.drawGroundItems();
+		check(drawn.isEmpty(), "a hidden item stays hidden as a stack of 60 - the rule is on the bare name");
+		GroundItemPrefs.toggleShowHidden();
+		c = fresh(50, 50);
+		c.put(50, 50, 526, 1);
+		c.drawGroundItems();
+		check(drawn.size() == 2 && drawn.get(1).split(",")[2].equals("707070"),
+			"reveal shows it greyed rather than in its normal colour, got " + drawn);
+		GroundItemPrefs.toggleShowHidden();
+		wipePrefs();
+
+		System.out.println("a highlight beats both the floor and the tiers");
+		while (GroundItemPrefs.minValue() != 1000000) { GroundItemPrefs.cycleMinValue(); }
+		GroundItemPrefs.toggle("Bones", GroundItemPrefs.HIGHLIGHT);
+		c = fresh(50, 50);
+		c.put(50, 50, 526, 1);      // worth 1gp, floor is 1m
+		c.drawGroundItems();
+		check(drawn.size() == 2, "a highlighted item is drawn however worthless, got " + drawn.size() / 2);
+		check(drawn.get(1).split(",")[2].equals("ff40ff"), "in the highlight colour, got " + drawn.get(1));
+		wipePrefs();
+
+		System.out.println("a skipped row keeps its slot so the column does not shift");
+		GroundItemPrefs.toggle("Bones", GroundItemPrefs.HIDE);
+		c = fresh(50, 50);
+		c.put(50, 50, 526, 1);
+		c.put(50, 50, 995, 5);
+		c.drawGroundItems();
+		check(drawn.size() == 2, "only the coins draw, got " + drawn.size() / 2);
+		int y = Integer.parseInt(drawn.get(1).split(",")[1]);
+		c = fresh(50, 50);
+		wipePrefs();
+		c.put(50, 50, 526, 1);
+		c.put(50, 50, 995, 5);
+		c.drawGroundItems();
+		int y2 = -1;
+		for (int i = 1; i < drawn.size(); i += 2) {
+			if (drawn.get(i).endsWith("Coins x 5")) { y2 = Integer.parseInt(drawn.get(i).split(",")[1]); }
+		}
+		check(y == y2, "the coins sit at the same height whether or not the bones are hidden, got " + y + " vs " + y2);
+
+		System.out.println("holding Alt grows the controls onto every label");
+		wipePrefs();
+		c = fresh(50, 50);
+		c.put(50, 50, 526, 1);
+		c.drawGroundItems();
+		check(c.giZoneCount == 0 && pieces.isEmpty(), "no Alt, no controls and no click targets");
+		c = fresh(50, 50);
+		c.actionKey[GameShell.KEY_ALT] = 1;
+		c.put(50, 50, 526, 1);
+		c.drawGroundItems();
+		check(c.giZoneCount == 1, "one click target per label, got " + c.giZoneCount);
+		check(drawn.isEmpty() && pieces.size() == 6, "drawn as [-] [+] name with shadows, got " + pieces.size() + " pieces");
+		check(c.giZoneName[0].equals("Bones"), "the target carries the BARE name, got " + c.giZoneName[0]);
+		check(c.giZoneMinusX[0] < c.giZonePlusX[0] && c.giZonePlusX[0] < c.giZoneNameX[0]
+				&& c.giZoneNameX[0] < c.giZoneNameEndX[0], "laid out left to right");
+		int centre = (c.giZoneMinusX[0] + c.giZoneNameEndX[0]) / 2;
+		check(Math.abs(centre - 256) <= 1, "the row stays centred on the tile as it grows, got " + centre);
+
+		System.out.println("clicking the controls");
+		c.mouseClickX = c.giZoneMinusX[0] + 4 + 4;      // +4 to undo QOL_PANEL_ORIGIN
+		c.mouseClickY = c.giZoneTop[0] + 4 + 4;
+		check(c.handleGroundItemClick(), "minus reports it consumed the click");
+		check(GroundItemPrefs.isHidden("Bones"), "and hid the item");
+		check(messages.size() == 1 && messages.get(0).contains("hidden"), "and said so, got " + messages);
+		c.mouseClickX = c.giZonePlusX[0] + 4 + 4;
+		messages.clear();
+		check(c.handleGroundItemClick() && !GroundItemPrefs.isHidden("Bones"), "plus puts it back to normal");
+		check(messages.size() == 1 && messages.get(0).contains("back to normal"), "and says so, got " + messages);
+		c.mouseClickX = c.giZoneNameX[0] + 4 + 2;
+		check(c.handleGroundItemClick() && GroundItemPrefs.isHighlighted("Bones"), "the name highlights");
+		check(c.handleGroundItemClick() && !GroundItemPrefs.isHighlighted("Bones"), "and un-highlights");
+		c.mouseClickX = c.giZoneNameEndX[0] + 4 + 40;
+		check(!c.handleGroundItemClick(), "a click past the row is not consumed, so it still walks");
+		c.mouseClickX = c.giZoneMinusX[0] + 4 + 4;
+		c.mouseClickY = c.giZoneTop[0] + 4 - 20;
+		check(!c.handleGroundItemClick(), "nor is one above the row");
+		wipePrefs();
+
+		System.out.println("Alt reveals hidden items so they have a [+] to click");
+		GroundItemPrefs.toggle("Bones", GroundItemPrefs.HIDE);
+		c = fresh(50, 50);
+		c.put(50, 50, 526, 1);
+		c.drawGroundItems();
+		check(c.giZoneCount == 0 && drawn.isEmpty(), "hidden and no Alt: nothing at all");
+		c = fresh(50, 50);
+		c.actionKey[GameShell.KEY_ALT] = 1;
+		c.put(50, 50, 526, 1);
+		c.drawGroundItems();
+		check(c.giZoneCount == 1, "with Alt held it comes back with a control, got " + c.giZoneCount);
+		wipePrefs();
+
+		System.out.println("double-tapping Alt toggles reveal; holding it does not");
+		c = fresh(50, 50);
+		check(!GroundItemPrefs.showHidden(), "starts off");
+		c.actionKey[GameShell.KEY_ALT] = 1; c.updateAltState();
+		c.actionKey[GameShell.KEY_ALT] = 0; c.updateAltState();
+		c.actionKey[GameShell.KEY_ALT] = 1; c.updateAltState();
+		check(GroundItemPrefs.showHidden(), "two taps in quick succession turn it on");
+		c.actionKey[GameShell.KEY_ALT] = 0; c.updateAltState();
+		c.actionKey[GameShell.KEY_ALT] = 1; c.updateAltState();
+		check(GroundItemPrefs.showHidden(), "a third tap does not toggle it straight back off");
+		c.actionKey[GameShell.KEY_ALT] = 0; c.updateAltState();
+		c.actionKey[GameShell.KEY_ALT] = 1; c.updateAltState();
+		check(!GroundItemPrefs.showHidden(), "but the fourth, pairing with the third, does");
+		c.actionKey[GameShell.KEY_ALT] = 0; c.updateAltState();
+		GroundItemPrefs.toggleShowHidden();
+		GroundItemPrefs.toggleShowHidden();
+		boolean before = GroundItemPrefs.showHidden();
+		c.actionKey[GameShell.KEY_ALT] = 1;
+		for (int i = 0; i < 50; i++) { c.updateAltState(); }   // an auto-repeating hold
+		check(GroundItemPrefs.showHidden() == before,
+			"holding Alt down does not read as a stream of taps - the edge is what counts");
+		c.actionKey[GameShell.KEY_ALT] = 0; c.updateAltState();
+		try { Thread.sleep(450); } catch (Exception ignored) { }
+		c.actionKey[GameShell.KEY_ALT] = 1; c.updateAltState();
+		c.actionKey[GameShell.KEY_ALT] = 0; c.updateAltState();
+		try { Thread.sleep(450); } catch (Exception ignored) { }
+		c.actionKey[GameShell.KEY_ALT] = 1; c.updateAltState();
+		check(GroundItemPrefs.showHidden() == before, "two slow taps are two taps, not a double-tap");
+		c.actionKey[GameShell.KEY_ALT] = 0; c.updateAltState();
+
+		wipePrefs();
 		System.out.println();
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
 		if (fails != 0) { System.exit(1); }

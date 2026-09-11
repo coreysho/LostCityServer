@@ -1,7 +1,9 @@
 import java.io.*;
 import java.util.*;
 import jagex2.client.DevLog;
+import jagex2.client.GroundItemPrefs;
 import jagex2.client.MenuSwaps;
+import jagex2.client.QolSettings;
 
 /**
  * Harness for the left-click swapper.
@@ -20,6 +22,7 @@ public class MenuSwapTest {
 	int[] menuParamC = new int[500];
 	int menuSize;
 	boolean menuSwapMode;
+	int[] swapRowOp = new int[500];
 	String[] swapRowKind = new String[500];
 	String[] swapRowTarget = new String[500];
 	String[] swapRowVerb = new String[500];
@@ -377,6 +380,62 @@ __BODY__
 		c.applyMenuSwap();
 		check(c.top().startsWith("Take"), "the named exception wins over the catch-all, got " + c.top());
 
+		System.out.println("ground item rules ride the same menu");
+		wipe();
+		new File(sign.signlink.findcachedir() + "qol_grounditems.dat").delete();
+		GroundItemPrefs.load();
+		c.menu("Cancel", "Walk here", "Take @lre@Bones", "Bury @lre@Bones");
+		c.buildSwapMenu();
+		int hideRow = c.row("Hide ");
+		int litRow = c.row("Highlight ");
+		check(hideRow > 0 && litRow > 0, "a ground item offers Hide and Highlight");
+		check(hideRow == c.menuSize - 2 && litRow == c.menuSize - 1,
+			"grouped at the top of the menu, got " + hideRow + "/" + litRow + " of " + c.menuSize);
+		messages.clear();
+		c.applySwapChoice(hideRow);
+		check(GroundItemPrefs.isHidden("Bones"), "the rule was stored");
+		check(messages.size() == 1 && messages.get(0).contains("hidden"), "and the player is told, got " + messages);
+		check(MenuSwaps.count() == 0, "and it did NOT become a left-click swap");
+		c.menu("Cancel", "Walk here", "Take @lre@Bones", "Bury @lre@Bones");
+		c.buildSwapMenu();
+		check(c.row("Stop hiding ") > 0, "the row now offers to undo it");
+		c.applySwapChoice(c.row("Stop hiding "));
+		check(!GroundItemPrefs.isHidden("Bones"), "and undoes it");
+
+		System.out.println("hide/highlight is offered only where it makes sense");
+		c.menu("Cancel", "Bury @lre@Bones", "Drop @lre@Bones");   // inventory: no Walk here
+		c.buildSwapMenu();
+		check(c.row("Hide ") < 0,
+			"an inventory menu gets no hide row - ground objs and inventory items share @lre@ and only "
+			+ "the Walk here entry tells them apart");
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)");
+		c.buildSwapMenu();
+		check(c.row("Hide ") < 0, "and an npc is not a ground item");
+
+		System.out.println("hidden and highlighted are one rule, not two that disagree");
+		new File(sign.signlink.findcachedir() + "qol_grounditems.dat").delete();
+		GroundItemPrefs.load();
+		c.menu("Cancel", "Walk here", "Take @lre@Bones");
+		c.buildSwapMenu();
+		c.applySwapChoice(c.row("Hide "));
+		c.menu("Cancel", "Walk here", "Take @lre@Bones");
+		c.buildSwapMenu();
+		c.applySwapChoice(c.row("Highlight "));
+		check(GroundItemPrefs.count() == 1 && GroundItemPrefs.isHighlighted("Bones")
+				&& !GroundItemPrefs.isHidden("Bones"),
+			"highlighting something hidden moves it, it does not add a second rule; got "
+				+ GroundItemPrefs.count() + " rules");
+
+		System.out.println("two stacks of the same item give one pair of rows");
+		c.menu("Cancel", "Walk here", "Take @lre@Bones", "Bury @lre@Bones", "Take @lre@Coins");
+		c.buildSwapMenu();
+		int hides = 0;
+		for (int i = 1; i < c.menuSize; i++) {
+			if (c.menuOption[i].startsWith("Hide ") || c.menuOption[i].startsWith("Stop hiding ")) { hides++; }
+		}
+		check(hides == 2, "one hide row per distinct item, got " + hides);
+
+		new File(sign.signlink.findcachedir() + "qol_grounditems.dat").delete();
 		swapFile().delete();
 		System.out.println();
 		System.out.println(fails == 0 ? "ALL PASS" : fails + " FAILED");
