@@ -21,18 +21,26 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CLIENT_DIR = os.path.normpath(os.path.join(HERE, '..', '..', 'javaclient'))
 
-METHOD_START = '\tprivate void applyMenuSwap() {'
-METHOD_END = '\n\t/**\n\t * Turns the menu row the player just picked into a stored swap.'
+# The three methods under test, in the order they appear in Client.java. Extracting a span rather
+# than retyping is the point: a harness with a hand-copied body proves only that the copy works.
+SPAN_START = '\t/** Rule a beats rule b'
+SPAN_END = '\tprivate int swapPanelHeight() {'
+# Constants the extracted methods use that live up with the other fields. Pulled across too rather
+# than retyped in the harness, so a change to one cannot pass a test that still asserts the old value.
+CONSTANTS = ['\tprivate static final int WALK_HERE_ACTION = 14;']
 
 
 def extract(client_java):
     with open(client_java, newline='') as f:
         src = f.read().replace('\r\n', '\n')
-    for needle in (METHOD_START, METHOD_END):
-        if src.count(needle.lstrip('\n')) != 1:
+    for needle in [SPAN_START, SPAN_END] + CONSTANTS:
+        if src.count(needle) != 1:
             raise SystemExit('anchor not found exactly once: %r' % needle[:60])
-    start = src.index(METHOD_START)
-    return src[start:src.index(METHOD_END, start)]
+    start = src.index(SPAN_START)
+    end = src.index(SPAN_END, start)
+    # WALK_HERE_ACTION is an instance-context constant in Client; the harness needs it static.
+    consts = '\n'.join(src[src.index(k):src.index(k) + len(k)] for k in CONSTANTS)
+    return consts + '\n\n' + src[start:end]
 
 
 def main():
@@ -60,7 +68,8 @@ def main():
         if r.returncode != 0:
             sys.stderr.write(r.stdout + r.stderr)
             raise SystemExit('harness did not compile')
-        r = subprocess.run(['java', '-cp', work, 'MenuSwapTest'], capture_output=True, text=True)
+        r = subprocess.run(['java', '-cp', work, 'MenuSwapTest'], capture_output=True, text=True,
+                           cwd=work)      # DevLog writes dev-client.log into cwd; keep it in the temp dir
         sys.stdout.write(r.stdout)
         sys.stderr.write(r.stderr)
         raise SystemExit(r.returncode)

@@ -1,5 +1,6 @@
 import java.io.*;
 import java.util.*;
+import jagex2.client.DevLog;
 import jagex2.client.MenuSwaps;
 
 /**
@@ -18,6 +19,13 @@ public class MenuSwapTest {
 	int[] menuParamB = new int[500];
 	int[] menuParamC = new int[500];
 	int menuSize;
+	boolean menuSwapMode;
+	String[] swapRowKind = new String[500];
+	String[] swapRowTarget = new String[500];
+	String[] swapRowVerb = new String[500];
+	int objSelected, spellSelected;
+	static List<String> messages = new ArrayList<>();
+	void addMessage(String from, String text, int type) { messages.add(text); }
 
 	// ---- the code under test (extracted from Client.java) --------------------------------------
 __BODY__
@@ -27,7 +35,9 @@ __BODY__
 		menuSize = 0;
 		for (String o : opts) {
 			menuOption[menuSize] = o;
-			menuAction[menuSize] = 100 + menuSize;
+			// 14 is what handleViewportOptions() gives the real Walk here entry; the swapper finds it
+			// by action, not by name, so the fixture has to carry the same number.
+			menuAction[menuSize] = o.startsWith("Walk here") ? 14 : 100 + menuSize;
 			menuParamA[menuSize] = 1000 + menuSize;
 			menuParamB[menuSize] = 2000 + menuSize;
 			menuParamC[menuSize] = 3000 + menuSize;
@@ -35,6 +45,13 @@ __BODY__
 		}
 	}
 	String top() { return menuOption[menuSize - 1]; }
+	/** Index of the first swap-menu row whose text starts with this, or -1. */
+	int row(String prefix) {
+		for (int i = 0; i < menuSize; i++) {
+			if (menuOption[i] != null && menuOption[i].startsWith(prefix)) { return i; }
+		}
+		return -1;
+	}
 
 	static int fails;
 	static void check(boolean ok, String what) {
@@ -187,6 +204,160 @@ __BODY__
 		c.applyMenuSwap();
 		check(c.top().startsWith("Talk-to") && c.menuOption[2].startsWith("Attack"),
 			"a rule naming what is already the left-click changes nothing");
+
+		System.out.println("shift + right-click builds a menu of swaps, not actions");
+		wipe();
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)", "Talk-to @yel@Guard@gr2@ (level-21)");
+		check(c.buildSwapMenu(), "there is something swappable under the cursor");
+		check(c.menuSwapMode, "swap mode is on");
+		check(c.menuSize == 4, "Cancel, a walk-here row and one row per option (Walk here itself has no "
+			+ "target of its own), got " + c.menuSize);
+		check(c.menuOption[0].equals("Cancel"), "Cancel still at 0, got " + c.menuOption[0]);
+		check(c.row("Left-click Attack") > 0, "row for Attack");
+		check(c.row("Left-click Talk-to") > 0, "row for Talk-to");
+		int attack = c.row("Left-click Attack");
+		check(c.swapRowVerb[attack].equals("Attack") && c.swapRowTarget[attack].equals("Guard")
+				&& c.swapRowKind[attack].equals("yel"),
+			"the row carries what it would store, got " + c.swapRowVerb[attack] + "/" + c.swapRowTarget[attack]);
+		check(c.swapRowVerb[0] == null, "Cancel's row stores nothing");
+		check(c.menuOption[attack].indexOf("(level-21)") < 0, "the level suffix is not shown in the swap row");
+
+		System.out.println("picking a row stores it and performs nothing");
+		messages.clear();
+		c.applySwapChoice(attack);
+		check(MenuSwaps.count() == 1 && MenuSwaps.verb(0).equals("Attack") && MenuSwaps.target(0).equals("Guard"),
+			"the swap was stored, got " + MenuSwaps.count());
+		check(messages.size() == 1 && messages.get(0).contains("Attack"), "the player is told, got " + messages);
+		messages.clear();
+		c.applySwapChoice(0);
+		check(MenuSwaps.count() == 1 && messages.isEmpty(), "Cancel does nothing");
+		c.applySwapChoice(-1);
+		c.applySwapChoice(99);
+		check(MenuSwaps.count() == 1, "a click that missed does nothing and does not throw");
+
+		System.out.println("a reset row appears only once a swap exists");
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)", "Talk-to @yel@Guard@gr2@ (level-21)");
+		c.buildSwapMenu();
+		check(c.menuSize == 5, "the same rows plus a reset row, got " + c.menuSize);
+		int reset = c.row("Reset left-click");
+		check(reset == c.menuSize - 1, "reset row last, got index " + reset + " of " + c.menuSize);
+		check(c.swapRowVerb[reset] == null, "a null verb marks the reset row");
+		messages.clear();
+		c.applySwapChoice(reset);
+		check(MenuSwaps.count() == 0, "reset removed it");
+		check(messages.size() == 1 && messages.get(0).contains("back to normal"), "and said so, got " + messages);
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)");
+		c.buildSwapMenu();
+		check(c.row("Reset left-click") < 0, "no swap stored, so no reset row");
+
+		System.out.println("when shift + right-click should leave the menu alone");
+		wipe();
+		c.menu("Cancel", "Walk here");
+		c.menuSwapMode = false;
+		check(!c.buildSwapMenu(), "bare ground: nothing swappable");
+		check(!c.menuSwapMode && c.menuSize == 2 && c.menuOption[1].equals("Walk here"),
+			"the real menu is untouched, got " + c.menuSize + " entries");
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)");
+		c.objSelected = 1;
+		c.menuSwapMode = false;
+		check(!c.buildSwapMenu(), "not while an item is selected - the verb is a one-off, not a preference");
+		check(c.menuOption[2].startsWith("Attack"), "and that menu is left alone too");
+		c.objSelected = 0;
+		c.spellSelected = 1;
+		check(!c.buildSwapMenu(), "same for a selected spell");
+		c.spellSelected = 0;
+
+		System.out.println("duplicate options collapse to one row");
+		wipe();
+		c.menu("Cancel", "Take @lre@Bones", "Take @lre@Bones", "Examine @lre@Bones");
+		c.buildSwapMenu();
+		check(c.menuSize == 3, "two identical Take entries give one row, got " + c.menuSize);
+		check(c.row("Left-click Walk here") < 0, "and no walk row: this menu has no Walk here entry");
+
+		System.out.println("the cap is reported, not silently ignored");
+		wipe();
+		for (int i = 0; i < MenuSwaps.MAX; i++) { MenuSwaps.add("yel", "npc" + i, "Attack"); }
+		c.menu("Cancel", "Attack @yel@Someone else@gr2@ (level-3)");
+		c.buildSwapMenu();
+		messages.clear();
+		c.applySwapChoice(1);
+		check(MenuSwaps.count() == MenuSwaps.MAX, "nothing was stored past the cap");
+		check(messages.size() == 1 && messages.get(0).contains("F10"), "and the player is told how to fix it, got " + messages);
+
+		System.out.println("Walk here: making a thing un-clickable");
+		wipe();
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)", "Talk-to @yel@Guard@gr2@ (level-21)");
+		c.buildSwapMenu();
+		check(c.menuOption[1].startsWith("Left-click Walk here"),
+			"a walk-here row is offered, at the bottom of the menu, got " + c.menuOption[1]);
+		check(c.swapRowVerb[1].equals("Walk here") && c.swapRowTarget[1].equals("Guard"),
+			"stored against the target, got " + c.swapRowVerb[1] + "/" + c.swapRowTarget[1]);
+		check(c.menuSize == 4, "one walk row plus the two options, got " + c.menuSize);
+		c.applySwapChoice(1);
+		check(MenuSwaps.count() == 1 && MenuSwaps.verb(0).equals("Walk here"), "stored as a normal swap");
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)", "Talk-to @yel@Guard@gr2@ (level-21)");
+		c.applyMenuSwap();
+		check(c.top().equals("Walk here"),
+			"left-clicking the Guard now walks instead of touching him, got " + c.top());
+		check(c.menuAction[c.menuSize - 1] == 14, "and it is the real Walk here action, got " + c.menuAction[c.menuSize - 1]);
+		check(c.menuOption[1].startsWith("Talk-to") || c.menuOption[2].startsWith("Talk-to"),
+			"the options are all still in the menu for a right-click");
+
+		System.out.println("walk-here competes on the same terms as any other rule");
+		wipe();
+		MenuSwaps.add("yel", MenuSwaps.ANY, "Walk here");   // catch-all: never touch npcs
+		MenuSwaps.add("yel", "Guard", "Attack");            // except this one
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)", "Talk-to @yel@Guard@gr2@ (level-21)");
+		c.applyMenuSwap();
+		check(c.top().startsWith("Attack"), "the named exception still wins over a walk-here catch-all, got " + c.top());
+		c.menu("Cancel", "Walk here", "Attack @yel@Goblin@gr2@ (level-2)", "Talk-to @yel@Goblin@gr2@ (level-2)");
+		c.applyMenuSwap();
+		check(c.top().equals("Walk here"), "and applies to every other npc, got " + c.top());
+		wipe();
+		MenuSwaps.add("yel", "Guard", "Walk here");
+		MenuSwaps.add("yel", MenuSwaps.ANY, "Attack");
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)");
+		c.applyMenuSwap();
+		check(c.top().equals("Walk here"), "and the reverse: an exact walk-here beats an attack catch-all, got " + c.top());
+
+		System.out.println("walk-here must work when the option is ALREADY the default");
+		wipe();
+		MenuSwaps.add("yel", "Guard", "Walk here");
+		c.menu("Cancel", "Walk here", "Attack @yel@Guard@gr2@ (level-21)");
+		c.applyMenuSwap();
+		check(c.top().equals("Walk here"),
+			"Attack was the left-click and had to be demoted, got " + c.top());
+
+		System.out.println("a walk-here rule only fires for its own target");
+		wipe();
+		MenuSwaps.add("yel", "Guard", "Walk here");
+		c.menu("Cancel", "Walk here", "Take @lre@Bones");
+		c.applyMenuSwap();
+		check(c.top().startsWith("Take"), "bones on the tile are still takeable, got " + c.top());
+		c.menu("Cancel", "Walk here", "Take @lre@Bones", "Attack @yel@Guard@gr2@ (level-21)");
+		c.applyMenuSwap();
+		check(c.top().equals("Walk here"),
+			"but a Guard standing on them makes the tile walk-only, got " + c.top());
+
+		System.out.println("no Walk here entry, no walk-here row or rule");
+		wipe();
+		c.menu("Cancel", "Bury @lre@Bones", "Drop @lre@Bones");   // an inventory menu has no Walk here
+		c.buildSwapMenu();
+		check(c.menuSize == 3, "no walk row offered where walking is not an option, got " + c.menuSize);
+		MenuSwaps.add("lre", "Bones", "Walk here");               // set anyway, by hand
+		c.menu("Cancel", "Bury @lre@Bones", "Drop @lre@Bones");
+		c.applyMenuSwap();
+		check(c.top().startsWith("Drop"), "and a stale walk-here rule cannot promote what is not there, got " + c.top());
+
+		System.out.println("a player on the tile already has a real Walk here option");
+		wipe();
+		c.menu("Cancel", "Walk here @whi@Zezima", "Trade with @whi@Zezima", "Follow @whi@Zezima");
+		c.buildSwapMenu();
+		int walkRows = 0;
+		for (int i = 1; i < c.menuSize; i++) {
+			if (c.menuOption[i].startsWith("Left-click Walk here")) { walkRows++; }
+		}
+		check(walkRows == 1, "exactly one walk-here row, not one from each path, got " + walkRows);
 
 		System.out.println("wildcards across a whole kind");
 		wipe();
