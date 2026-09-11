@@ -1,0 +1,283 @@
+From c2f62cd5f043ac9d827dedd5e0bd5f69e01e3e98 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 10 Sep 2026 17:11:36 +0000
+Subject: [PATCH 1/2] FileStream.write: refresh the read cache after writing
+ changed data
+
+read() caches file bytes in this.packed; write() read the old bytes first
+and never replaced them, so packClientVersionList computed the previous
+build's crc for every changed map/model/anim. Clients then kept their stale
+cached copy (or rejected the new file) - the Warriors' Guild map showed as
+the old Burthorpe grass.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WTo3qFuhgbaA3yymZcTW7m
+---
+ src/io/FileStream.ts | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/io/FileStream.ts b/src/io/FileStream.ts
+index 5a3767b..26a1b87 100644
+--- a/src/io/FileStream.ts
++++ b/src/io/FileStream.ts
+@@ -211,6 +211,16 @@ export default class FileStream {
+             sector = nextSector;
+         }
+ 
++        // read() above cached the OLD bytes in this.packed; replace them so later reads in the same
++        // process (packClientVersionList's crc pass) see what is now on disk. Without this every
++        // changed map/model got the previous build's crc in the versionlist, so clients kept their
++        // old cached copy (or, with nothing cached, rejected the new file forever).
++        if (this.discardPacked) {
++            delete this.packed[archive][file];
++        } else {
++            this.packed[archive][file] = data;
++        }
++
+         return true;
+     }
+ 
+-- 
+2.43.0
+
+
+From 76d7b99bafad9b471fddf6f2d8e0d2e52da1db8b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 10 Sep 2026 21:57:58 +0000
+Subject: [PATCH 2/2] Construction plumbing: stat 21, save v8 with stat-count
+ prefix, slayer/farming counted in total
+
+v7 saves load with Construction at level 1; tested on a real v7 save (round trip identical).
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WTo3qFuhgbaA3yymZcTW7m
+---
+ src/engine/entity/Player.ts           | 23 ++++++++++++--------
+ src/engine/entity/PlayerLoading.ts    | 30 ++++++++++++++++++++-------
+ src/engine/entity/PlayerStat.ts       | 17 ++++++++++++---
+ src/engine/script/ScriptValidators.ts |  2 +-
+ tools/pack/config/ParamConfig.ts      |  3 ++-
+ tools/pack/interface/PackShared.ts    |  2 ++
+ tools/unpack/interface/Unpack.ts      |  3 ++-
+ 7 files changed, 58 insertions(+), 22 deletions(-)
+
+diff --git a/src/engine/entity/Player.ts b/src/engine/entity/Player.ts
+index be14824..c2d0410 100644
+--- a/src/engine/entity/Player.ts
++++ b/src/engine/entity/Player.ts
+@@ -30,7 +30,7 @@ import Obj from '#/engine/entity/Obj.js';
+ import PathingEntity from '#/engine/entity/PathingEntity.js';
+ import { PlayerLoading } from '#/engine/entity/PlayerLoading.js';
+ import { PlayerQueueRequest, PlayerQueueType, QueueType, ScriptArgument } from '#/engine/entity/PlayerQueueRequest.js';
+-import { PlayerStat, PlayerStatEnabled, PlayerStatFree, PlayerStatNameMap } from '#/engine/entity/PlayerStat.js';
++import { PLAYER_STAT_COUNT, PlayerStat, PlayerStatEnabled, PlayerStatFree, PlayerStatNameMap } from '#/engine/entity/PlayerStat.js';
+ import InputTracking from '#/engine/entity/tracking/InputTracking.js';
+ import { WealthEventParams } from '#/engine/entity/tracking/WealthEvent.js';
+ import { changeNpcCollision, changePlayerOccCollision, findNaivePath, reachedEntity, reachedLoc, reachedObj } from '#/engine/GameMap.js';
+@@ -204,7 +204,10 @@ export default class Player extends PathingEntity {
+         sav.p2(this.runenergy);
+         sav.p4(this.playtime);
+ 
+-        for (let i = 0; i < 21; i++) {
++        // v8+: the stat count is written first, so adding a stat later (Hunter) is not another
++        // format change - PlayerLoading reads however many the file says and defaults the rest.
++        sav.p1(PLAYER_STAT_COUNT);
++        for (let i = 0; i < PLAYER_STAT_COUNT; i++) {
+             sav.p4(this.stats[i]);
+             sav.p1(this.levels[i]);
+         }
+@@ -294,8 +297,8 @@ export default class Player extends PathingEntity {
+     lastRunEnergy: number = -1;
+     runweight: number = 0;
+     playtime: number = 0;
+-    stats: Int32Array = new Int32Array(21);
+-    levels: Uint8Array = new Uint8Array(21);
++    stats: Int32Array = new Int32Array(PLAYER_STAT_COUNT);
++    levels: Uint8Array = new Uint8Array(PLAYER_STAT_COUNT);
+     vars: Int32Array;
+     varsString: string[];
+     invs: Map<number, Inventory> = new Map<number, Inventory>();
+@@ -316,9 +319,9 @@ export default class Player extends PathingEntity {
+     combatLevel: number = 3;
+     skillLevel: number = 0;
+     headicons: number = 0;
+-    baseLevels = new Uint8Array(21);
+-    lastStats: Int32Array = new Int32Array(21); // we track this so we know to flush stats only once a tick on changes
+-    lastLevels: Uint8Array = new Uint8Array(21); // we track this so we know to flush stats only once a tick on changes
++    baseLevels = new Uint8Array(PLAYER_STAT_COUNT);
++    lastStats: Int32Array = new Int32Array(PLAYER_STAT_COUNT); // we track this so we know to flush stats only once a tick on changes
++    lastLevels: Uint8Array = new Uint8Array(PLAYER_STAT_COUNT); // we track this so we know to flush stats only once a tick on changes
+     originX: number = -1;
+     originZ: number = -1;
+     buildArea: BuildArea = new BuildArea(this);
+@@ -1897,8 +1900,10 @@ export default class Player extends PathingEntity {
+             if (currMilestone > prevMilestone) {
+                 this.addSessionLog(LoggerEventType.ADVENTURE, `Reached total level ${currMilestone * milestone}`);
+             }
+-            if (total === 1881) {
+-                this.addSessionLog(LoggerEventType.ADVENTURE, 'Reached total level 1881 - you beat p2p!');
++            // was a hardcoded 1881 (19 enabled stats x 99); derived now that the enabled set changed
++            const maxTotal = PlayerStatEnabled.filter(enabled => enabled).length * 99;
++            if (total === maxTotal) {
++                this.addSessionLog(LoggerEventType.ADVENTURE, `Reached total level ${maxTotal} - you beat p2p!`);
+             }
+             if (freeTotal === 1485) {
+                 this.addSessionLog(LoggerEventType.ADVENTURE, 'Reached total level 1485 - you beat f2p!');
+diff --git a/src/engine/entity/PlayerLoading.ts b/src/engine/entity/PlayerLoading.ts
+index 62c9c03..669547a 100644
+--- a/src/engine/entity/PlayerLoading.ts
++++ b/src/engine/entity/PlayerLoading.ts
+@@ -1,7 +1,7 @@
+ import InvType from '#/cache/config/InvType.js';
+ import { NetworkPlayer } from '#/engine/entity/NetworkPlayer.js';
+ import Player, { getExpByLevel, getLevelByExp } from '#/engine/entity/Player.js';
+-import { PlayerStat } from '#/engine/entity/PlayerStat.js';
++import { PLAYER_STAT_COUNT, PlayerStat } from '#/engine/entity/PlayerStat.js';
+ import World from '#/engine/World.js';
+ import Packet from '#/io/Packet.js';
+ import ClientSocket from '#/server/ClientSocket.js';
+@@ -9,7 +9,10 @@ import { fromBase37, toBase37 } from '#/util/JString.js';
+ 
+ export class PlayerLoading {
+     public static readonly SAV_MAGIC: number = 0x2004;
+-    public static readonly SAV_VERSION: number = 7;
++    // 8: stat count prefix before the stats block (Construction, 2026-09-10). Versions <= 7 always
++    //    hold exactly 21 stats. Once a save is written as 8, an engine still on 7 refuses it
++    //    ("Unsupported save version") - back up data/players before deploying this.
++    public static readonly SAV_VERSION: number = 8;
+ 
+     static verify(sav: Packet) {
+         if (sav.g2() !== PlayerLoading.SAV_MAGIC) {
+@@ -37,7 +40,7 @@ export class PlayerLoading {
+         player.lastResponse = World.currentTick;
+ 
+         if (sav.data.length < 2) {
+-            for (let i = 0; i < 21; i++) {
++            for (let i = 0; i < PLAYER_STAT_COUNT; i++) {
+                 player.stats[i] = 0;
+                 player.baseLevels[i] = 1;
+                 player.levels[i] = 1;
+@@ -87,10 +90,23 @@ export class PlayerLoading {
+             player.playtime = sav.g2();
+         }
+ 
+-        for (let i = 0; i < 21; i++) {
+-            player.stats[i] = sav.g4s();
+-            player.baseLevels[i] = getLevelByExp(player.stats[i]);
+-            player.levels[i] = sav.g1();
++        const statCount = version >= 8 ? sav.g1() : 21;
++        for (let i = 0; i < statCount; i++) {
++            const xp = sav.g4s();
++            const level = sav.g1();
++            if (i >= PLAYER_STAT_COUNT) {
++                continue; // written by a newer engine with more stats - drop them rather than overrun
++            }
++            player.stats[i] = xp;
++            player.baseLevels[i] = getLevelByExp(xp);
++            player.levels[i] = level;
++        }
++        // stats this save predates (Construction for every v7 save) start at level 1, 0 xp - the
++        // typed arrays default to 0, which would otherwise be read as level 0.
++        for (let i = statCount; i < PLAYER_STAT_COUNT; i++) {
++            player.stats[i] = 0;
++            player.baseLevels[i] = 1;
++            player.levels[i] = 1;
+         }
+ 
+         const varpCount = sav.g2();
+diff --git a/src/engine/entity/PlayerStat.ts b/src/engine/entity/PlayerStat.ts
+index 4deefb9..72bd224 100644
+--- a/src/engine/entity/PlayerStat.ts
++++ b/src/engine/entity/PlayerStat.ts
+@@ -19,7 +19,8 @@ export const enum PlayerStat {
+     THIEVING,
+     SLAYER,
+     FARMING,
+-    RUNECRAFT
++    RUNECRAFT,
++    CONSTRUCTION
+ }
+ 
+ export const PlayerStatMap: Map<string, number> = new Map([
+@@ -44,12 +45,22 @@ export const PlayerStatMap: Map<string, number> = new Map([
+     ['SLAYER', PlayerStat.SLAYER],
+     ['FARMING', PlayerStat.FARMING],
+     ['RUNECRAFT', PlayerStat.RUNECRAFT],
++    ['CONSTRUCTION', PlayerStat.CONSTRUCTION],
+ ]);
+ 
+ export const PlayerStatNameMap: Map<number, string> = new Map(
+     Array.from(PlayerStatMap.entries()).map(([key, value]) => [value, key])
+ );
+ 
+-export const PlayerStatEnabled = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, false, false, true];
++// Slayer and Farming were false upstream (not implemented in base 377). Both are live in this build, and
++// the client's Stats.field1505 already counts them in the stat tab's total, so the server-side total
++// level (hiscores, the total-level adventure log) now agrees with what the player sees.
++// Construction added 2026-09-10 as stat 21 - the first of the client's four spare slots.
++export const PlayerStatEnabled = [true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true, true];
+ 
+-export const PlayerStatFree = [true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, false, false, false, false, false, true];
++export const PlayerStatFree = [true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, false, false, false, false, false, true, false];
++
++// Number of player stats. Everything that sizes a per-stat array, or walks the stats in a save file,
++// reads this instead of a hardcoded 21. Must stay <= 25: the 377 client allocates exactly 25 stat
++// slots (Stats.field1503) and indexes skillLevel/skillExperience by the id we send.
++export const PLAYER_STAT_COUNT = PlayerStat.CONSTRUCTION + 1;
+diff --git a/src/engine/script/ScriptValidators.ts b/src/engine/script/ScriptValidators.ts
+index 3348a30..d2b80d5 100644
+--- a/src/engine/script/ScriptValidators.ts
++++ b/src/engine/script/ScriptValidators.ts
+@@ -111,7 +111,7 @@ export const CoordValid: ScriptValidator<number, CoordGrid> = new ScriptInputCoo
+ export const ParamTypeValid: ScriptValidator<number, ParamType> = new ScriptInputConfigTypeValidator(ParamType.get, (input: number) => input >= 0 && input < ParamType.count, 'Param');
+ export const NpcTypeValid: ScriptValidator<number, NpcType> = new ScriptInputConfigTypeValidator(NpcType.get, (input: number) => input >= 0 && input < NpcType.count, 'Npc');
+ export const NpcStatValid: ScriptValidator<number, NpcStat> = new ScriptInputRangeValidator(NpcStat.ATTACK, NpcStat.MAGIC, 'NpcStat');
+-export const PlayerStatValid: ScriptValidator<number, PlayerStat> = new ScriptInputRangeValidator(PlayerStat.ATTACK, PlayerStat.RUNECRAFT, 'PlayerStat');
++export const PlayerStatValid: ScriptValidator<number, PlayerStat> = new ScriptInputRangeValidator(PlayerStat.ATTACK, PlayerStat.CONSTRUCTION, 'PlayerStat');
+ export const QueueValid: ScriptValidator<number, number> = new ScriptInputRangeValidator(0, 19, 'AIQueue');
+ export const HuntTypeValid: ScriptValidator<number, HuntType> = new ScriptInputConfigTypeValidator(HuntType.get, (input: number) => input >= 0 && input < HuntType.count, 'Hunt');
+ export const NpcModeValid: ScriptValidator<number, NpcMode> = new ScriptInputRangeValidator(NpcMode.NULL, NpcMode.APNPC5, 'NpcMode');
+diff --git a/tools/pack/config/ParamConfig.ts b/tools/pack/config/ParamConfig.ts
+index 8872359..7f55689 100644
+--- a/tools/pack/config/ParamConfig.ts
++++ b/tools/pack/config/ParamConfig.ts
+@@ -23,7 +23,8 @@ const stats: (string | null)[] = [
+     'thieving',
+     'slayer',
+     'farming',
+-    'runecraft'
++    'runecraft',
++    'construction'
+ ];
+ 
+ const npcStats = ['hitpoints', 'attack', 'strength', 'defence', 'magic', 'ranged'];
+diff --git a/tools/pack/interface/PackShared.ts b/tools/pack/interface/PackShared.ts
+index 83e0f45..d2402e5 100644
+--- a/tools/pack/interface/PackShared.ts
++++ b/tools/pack/interface/PackShared.ts
+@@ -153,6 +153,8 @@ function nameToStat(name: string) {
+             return 19;
+         case 'runecraft':
+             return 20;
++        case 'construction':
++            return 21;
+     }
+ 
+     return -1;
+diff --git a/tools/unpack/interface/Unpack.ts b/tools/unpack/interface/Unpack.ts
+index 08140fc..fa7e1f9 100644
+--- a/tools/unpack/interface/Unpack.ts
++++ b/tools/unpack/interface/Unpack.ts
+@@ -75,7 +75,8 @@ const STATS = [
+     'thieving',
+     'slayer',
+     'farming',
+-    'runecraft'
++    'runecraft',
++    'construction'
+ ];
+ 
+ class IfType {
+-- 
+2.43.0
+
