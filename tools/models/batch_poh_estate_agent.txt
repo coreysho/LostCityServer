@@ -1,0 +1,2 @@
+# OSRS npc 3097 - the estate agent who stands beside the Rimmington house portal.
+3097 poh_estate_agent ready=human_ready walk=human_walk_f

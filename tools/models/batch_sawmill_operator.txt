@@ -1,0 +1,2 @@
+# The Varrock lumber yard sawmill operator (OSRS npc 3101).
+3101 sawmill_operator ready=human_ready walk=human_walk_f
