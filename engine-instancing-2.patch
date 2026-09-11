@@ -1,0 +1,205 @@
+From 0ef55d42d3a786c8d766a2e023442c1692ba9cf1 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 11 Sep 2026 04:20:29 +0000
+Subject: [PATCH] Instances: fresh rebuild per instance, hide/show loc
+ categories, floor-block void zones
+
+- Instance versions come from one global counter, so a new house in a reused slot always
+  sends a fresh REBUILD_REGION (the client kept the previous style's scene before)
+- instance_loccategory(coord, category, visible): hide or show every template loc of a
+  category in an instance (Construction hotspots outside build mode; door hotspots are walls)
+- template-less zones next to an edited zone are floor-blocked only when allocated
+- InstanceMap no longer imports GameMap (avoids an ESM init-order cycle)
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WTo3qFuhgbaA3yymZcTW7m
+---
+ src/engine/GameMap.ts                   | 14 ++++++
+ src/engine/InstanceMap.ts               | 57 +++++++++++++++++++------
+ src/engine/script/ScriptOpcode.ts       |  2 +
+ src/engine/script/handlers/ServerOps.ts | 10 +++++
+ 4 files changed, 71 insertions(+), 12 deletions(-)
+
+diff --git a/src/engine/GameMap.ts b/src/engine/GameMap.ts
+index 62353a9..85dfba0 100644
+--- a/src/engine/GameMap.ts
++++ b/src/engine/GameMap.ts
+@@ -472,6 +472,20 @@ export default class GameMap {
+         }
+     }
+ 
++    /** Floor-block every tile of an already-allocated collision zone (instance void; see InstanceMap.blockVoid). */
++    floorBlockZoneIfAllocated(x: number, z: number, level: number): void {
++        x &= ~7;
++        z &= ~7;
++        if (!rsmod.isZoneAllocated(x, z, level)) {
++            return;
++        }
++        for (let tx: number = 0; tx < 8; tx++) {
++            for (let tz: number = 0; tz < 8; tz++) {
++                changeLandCollision(x + tx, z + tz, level, true);
++            }
++        }
++    }
++
+     hasMapsquare(x: number, z: number): boolean {
+         return this.readRaw(`m${x >> 6}_${z >> 6}`) !== null;
+     }
+diff --git a/src/engine/InstanceMap.ts b/src/engine/InstanceMap.ts
+index af3b161..92843eb 100644
+--- a/src/engine/InstanceMap.ts
++++ b/src/engine/InstanceMap.ts
+@@ -1,4 +1,5 @@
+-import { changeLandCollision, isZoneAllocated } from '#/engine/GameMap.js';
++import LocType from '#/cache/config/LocType.js';
++import { EntityLifeCycle } from '#/engine/entity/EntityLifeCycle.js';
+ import World from '#/engine/World.js';
+ 
+ /**
+@@ -25,6 +26,16 @@ export default class InstanceMap {
+ 
+     private static readonly instances: Map<number, Instance> = new Map();
+ 
++    // One counter for every instance, not one per instance: a slot is reused as soon as it is freed, and
++    // a fresh instance counting from 0 again would reach the same (slot, version) pair the player's
++    // client last built - BuildArea would see "nothing changed" and the old scene would stay up. That
++    // is exactly what ::~pohtest 1 after ::~pohtest 0 did (2026-09-11).
++    private static versionCounter: number = 0;
++
++    static nextVersion(): number {
++        return ++InstanceMap.versionCounter;
++    }
++
+     /** The instance containing this tile, if any. */
+     static at(x: number, z: number): Instance | null {
+         const slot = InstanceMap.slotOf(x, z);
+@@ -57,7 +68,7 @@ export default class InstanceMap {
+             World.gameMap.purgeZone(inst.baseX + zx * 8, inst.baseZ + zz * 8, level);
+         }
+         inst.templates.clear();
+-        inst.version++;
++        inst.version = InstanceMap.nextVersion();
+         InstanceMap.instances.delete(inst.slot);
+     }
+ 
+@@ -82,7 +93,7 @@ export class Instance {
+     /** (level, local zone) -> client template code: srcLevel << 24 | srcZoneX << 14 | srcZoneZ << 3 | rot << 1 */
+     readonly templates: Map<number, number> = new Map();
+     /** Bumped on every template change, so BuildArea knows to resend the region to players inside. */
+-    version: number = 0;
++    version: number = InstanceMap.nextVersion();
+ 
+     constructor(slot: number, baseX: number, baseZ: number) {
+         this.slot = slot;
+@@ -102,6 +113,33 @@ export class Instance {
+         return InstanceMap.at(x, z) === this;
+     }
+ 
++    /**
++     * Hide (remove) or show again every template loc of a category across the whole instance - how a
++     * house leaves build mode: its hotspots (category poh_hotspot) go, and with them the door hotspots
++     * that otherwise wall off every doorway. Removed static locs stay in their zone, inactive, so the
++     * client is told (LOC_DEL) and showing them again is just World.addLoc.
++     */
++    setCategoryVisible(category: number, visible: boolean): number {
++        let changed = 0;
++        for (const key of this.templates.keys()) {
++            const { level, zx, zz } = Instance.unpackKey(key);
++            const zone = World.gameMap.getZone(this.baseX + zx * 8, this.baseZ + zz * 8, level);
++            for (const loc of Array.from(zone.getAllLocsUnsafe())) {
++                if (loc.lifecycle !== EntityLifeCycle.RESPAWN || LocType.get(loc.type).category !== category) {
++                    continue;
++                }
++                if (!visible && loc.isActive) {
++                    World.removeLoc(loc, 0);
++                    changed++;
++                } else if (visible && !loc.isActive) {
++                    World.addLoc(loc, 0);
++                    changed++;
++                }
++            }
++        }
++        return changed;
++    }
++
+     static decodeTemplate(code: number): { srcLevel: number; srcX: number; srcZ: number; rot: number } {
+         return { srcLevel: (code >> 24) & 0x3, srcX: ((code >> 14) & 0x3ff) << 3, srcZ: ((code >> 3) & 0x7ff) << 3, rot: (code >> 1) & 0x3 };
+     }
+@@ -118,7 +156,7 @@ export class Instance {
+         World.gameMap.applyZoneTemplate(srcX, srcZ, srcLevel, this.baseX + zx * 8, this.baseZ + zz * 8, level, rot, true, true, true);
+         this.templates.set(Instance.packKey(level, zx, zz), code);
+         this.restoreNeighbours(zx, zz, level);
+-        this.version++;
++        this.version = InstanceMap.nextVersion();
+         return true;
+     }
+ 
+@@ -130,7 +168,7 @@ export class Instance {
+         const zz = (z - this.baseZ) >> 3;
+         this.unapply(zx, zz, level);
+         this.restoreNeighbours(zx, zz, level);
+-        this.version++;
++        this.version = InstanceMap.nextVersion();
+     }
+ 
+     /**
+@@ -195,13 +233,8 @@ export class Instance {
+     private blockVoid(zx: number, zz: number, level: number): void {
+         const x = this.baseX + zx * 8;
+         const z = this.baseZ + zz * 8;
+-        if (!this.contains(x, z) || !isZoneAllocated(level, x, z)) {
+-            return;
+-        }
+-        for (let tx = 0; tx < 8; tx++) {
+-            for (let tz = 0; tz < 8; tz++) {
+-                changeLandCollision(x + tx, z + tz, level, true);
+-            }
++        if (this.contains(x, z)) {
++            World.gameMap.floorBlockZoneIfAllocated(x, z, level);
+         }
+     }
+ }
+diff --git a/src/engine/script/ScriptOpcode.ts b/src/engine/script/ScriptOpcode.ts
+index 1e6e5cd..1c8dc9c 100644
+--- a/src/engine/script/ScriptOpcode.ts
++++ b/src/engine/script/ScriptOpcode.ts
+@@ -70,6 +70,7 @@ export const enum ScriptOpcode {
+     INSTANCE_CLEARZONE, // custom (2026-09-11) - empty one instance zone
+     INSTANCE_DELETE, // custom (2026-09-11) - free an instance and everything in it
+     INSTANCE_FIND, // custom (2026-09-11) - base coord of the instance containing a coord, or null
++    INSTANCE_LOCCATEGORY, // custom (2026-09-11) - hide/show every template loc of a category in an instance (POH hotspots)
+ 
+     // Player ops (2000-2499)
+     AFK_EVENT = 2000,
+@@ -534,6 +535,7 @@ export const ScriptOpcodeMap: Map<string, number> = new Map([
+     ['INSTANCE_CLEARZONE', ScriptOpcode.INSTANCE_CLEARZONE],
+     ['INSTANCE_DELETE', ScriptOpcode.INSTANCE_DELETE],
+     ['INSTANCE_FIND', ScriptOpcode.INSTANCE_FIND],
++    ['INSTANCE_LOCCATEGORY', ScriptOpcode.INSTANCE_LOCCATEGORY],
+ 
+     ['AFK_EVENT', ScriptOpcode.AFK_EVENT],
+     ['ALLOWDESIGN', ScriptOpcode.ALLOWDESIGN],
+diff --git a/src/engine/script/handlers/ServerOps.ts b/src/engine/script/handlers/ServerOps.ts
+index 54c4c8e..44f4a40 100644
+--- a/src/engine/script/handlers/ServerOps.ts
++++ b/src/engine/script/handlers/ServerOps.ts
+@@ -400,6 +400,16 @@ const ServerOps: CommandHandlers = {
+         }
+     },
+ 
++    // instance_loccategory(coord $coord, category $category, boolean $visible)(int): hide or show every
++    // template loc of $category in the instance containing $coord; returns how many changed.
++    [ScriptOpcode.INSTANCE_LOCCATEGORY]: state => {
++        const visible = state.popInt() === 1;
++        const [coord, category] = state.popInts(2);
++        const c: CoordGrid = check(coord, CoordValid);
++        const inst = InstanceMap.at(c.x, c.z);
++        state.pushInt(inst ? inst.setCategoryVisible(category, visible) : 0);
++    },
++
+     // instance_find(coord $coord)(coord): the base coord (level 0) of the instance containing $coord, or null.
+     [ScriptOpcode.INSTANCE_FIND]: state => {
+         const c: CoordGrid = check(state.popInt(), CoordValid);
+-- 
+2.43.0
+

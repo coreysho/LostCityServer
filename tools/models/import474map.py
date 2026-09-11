@@ -162,6 +162,9 @@ def import_loc(c, oid, lines, model_files, notes):
         slots.setdefault(k, {})[t] = mid
     L = [f'[{name}]', f'// rev 474 loc {oid} (import474map.py)']
     if d.get('name') and d['name'] != 'null': L.append(f"name={d['name']}")
+    # Construction hotspots ("Chair space", "Door hotspot"...) all carry op5 Build. Tagged so a house can
+    # hide them outside build mode (instance_loccategory) - otherwise door hotspots wall off every doorway.
+    if 'Build' in d.get('ops', {}).values(): L.append('category=poh_hotspot')
     recol_cfg = []; bake = []
     for a, b in d.get('recol') or []:
         ra, oka = hsl16_to_rgb15(a); rb, okb = hsl16_to_rgb15(b)
