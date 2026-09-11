@@ -1,0 +1,762 @@
+From 59ae6d8ab059991d113eb34cf83b58987e324701 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 11 Sep 2026 03:42:23 +0000
+Subject: [PATCH] Instanced regions: REBUILD_REGION, InstanceMap, rotated
+ zone-template copies, instance_* commands
+
+Groundwork for Construction. An instance is a 16x16-zone block at x/z 6400+ whose zones are
+copies of template zones (collision + locs, rotated with the client's own WorldRegion maths);
+players inside get REBUILD_REGION. Server collision verified tile-for-tile against the client's
+instanced scene build, including a room replaced and a room cleared after the first build.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01WTo3qFuhgbaA3yymZcTW7m
+---
+ src/engine/GameMap.ts                         | 193 ++++++++++++++++
+ src/engine/InstanceMap.ts                     | 207 ++++++++++++++++++
+ src/engine/entity/BuildArea.ts                |  41 +++-
+ src/engine/script/ScriptOpcode.ts             |  10 +
+ src/engine/script/handlers/ServerOps.ts       |  44 ++++
+ src/engine/zone/Zone.ts                       |  25 +++
+ src/network/game/server/ServerGameProt.ts     |   2 +-
+ .../game/server/ServerGameProtRepository.ts   |   3 +
+ .../game/server/codec/RebuildRegionEncoder.ts |  35 +++
+ .../game/server/model/RebuildRegion.ts        |  17 ++
+ 10 files changed, 574 insertions(+), 3 deletions(-)
+ create mode 100644 src/engine/InstanceMap.ts
+ create mode 100644 src/network/game/server/codec/RebuildRegionEncoder.ts
+ create mode 100644 src/network/game/server/model/RebuildRegion.ts
+
+diff --git a/src/engine/GameMap.ts b/src/engine/GameMap.ts
+index 84edfc7..62353a9 100644
+--- a/src/engine/GameMap.ts
++++ b/src/engine/GameMap.ts
+@@ -289,6 +289,199 @@ export default class GameMap {
+         }
+     }
+ 
++    // ---- instanced regions (custom, 2026-09-11: Construction) ----
++    //
++    // A REBUILD_REGION scene is built by the CLIENT from copied 8x8 source zones (Client.buildScene,
++    // World.method16 / method20). The server has to hold the same thing: the destination zone's
++    // collision and its interactable locs, copied from the same source zone with the same rotation.
++    // The rotation maths here is a transcription of the client's WorldRegion.method461-464 - see
++    // claude/poh-instancing.md; change one and the player walks through walls the client draws.
++
++    private readonly rawMapCache: Map<string, Uint8Array | null> = new Map();
++
++    private readRaw(name: string): Uint8Array | null {
++        if (this.rawMapCache.has(name)) {
++            return this.rawMapCache.get(name)!;
++        }
++        let data: Uint8Array | null = null;
++        const zipPath = 'data/pack/.cache/maps-server.zip';
++        if (fs.existsSync(zipPath)) {
++            const entries = unzipSync(fs.readFileSync(zipPath), { filter: (file: { name: string }) => file.name === name });
++            data = entries[name] ?? null;
++        } else if (fs.existsSync(`data/pack/server/maps/${name}`)) {
++            data = fs.readFileSync(`data/pack/server/maps/${name}`);
++        }
++        this.rawMapCache.set(name, data);
++        return data;
++    }
++
++    /** Flags byte per tile of a server-packed land file: [level][x][z] packed like packCoord. */
++    private decodeLandFlags(data: Uint8Array): Int8Array {
++        const lands: Int8Array = new Int8Array(GameMap.MAPSQUARE);
++        const packet: Packet = new Packet(data);
++        for (let level: number = 0; level < GameMap.Y; level++) {
++            for (let x: number = 0; x < GameMap.X; x++) {
++                for (let z: number = 0; z < GameMap.Z; z++) {
++                    while (true) {
++                        const opcode: number = packet.g1();
++                        if (opcode === 0) {
++                            break;
++                        } else if (opcode === 1) {
++                            packet.pos++;
++                            break;
++                        }
++                        if (opcode <= 49) {
++                            packet.pos++;
++                        } else if (opcode <= 81) {
++                            lands[this.packCoord(x, z, level)] = opcode - 49;
++                        }
++                    }
++                }
++            }
++        }
++        return lands;
++    }
++
++    /** Client WorldRegion.method463/464 (locs) - with width = length = 1 they reduce to method461/462 (tiles). */
++    static rotateZoneX(rot: number, x: number, z: number, sizeX: number, sizeZ: number): number {
++        switch (rot & 0x3) {
++            case 0:
++                return x;
++            case 1:
++                return z;
++            case 2:
++                return 7 - x - (sizeX - 1);
++            default:
++                return 7 - z - (sizeZ - 1);
++        }
++    }
++
++    static rotateZoneZ(rot: number, x: number, z: number, sizeX: number, sizeZ: number): number {
++        switch (rot & 0x3) {
++            case 0:
++                return z;
++            case 1:
++                return 7 - x - (sizeX - 1);
++            case 2:
++                return 7 - z - (sizeZ - 1);
++            default:
++                return x;
++        }
++    }
++
++    /**
++     * Apply one 8x8 source zone to a destination zone, rotated: its land collision (`lands`), its
++     * loc collision, and (`placeLocs`, only when adding) its active locs as static zone locs.
++     * `add = false` takes the same collision back off - which is how a replaced room's walls stop
++     * flagging the tiles across the zone edge in the room next door (a wall on a zone's south row
++     * also flags the north side of the tile below it). Coordinates are absolute tiles, rounded down to
++     * their zone. Returns false if the source map square is not in the build.
++     */
++    applyZoneTemplate(srcX: number, srcZ: number, srcLevel: number, dstX: number, dstZ: number, dstLevel: number, rot: number, add: boolean, lands: boolean, placeLocs: boolean, inactiveOnly: boolean = false): boolean {
++        srcX &= ~7;
++        srcZ &= ~7;
++        dstX &= ~7;
++        dstZ &= ~7;
++        const mx: number = srcX >> 6;
++        const mz: number = srcZ >> 6;
++        const land: Uint8Array | null = this.readRaw(`m${mx}_${mz}`);
++        const locData: Uint8Array | null = this.readRaw(`l${mx}_${mz}`);
++        if (!land) {
++            return false;
++        }
++        const localX: number = srcX & 0x3f;
++        const localZ: number = srcZ & 0x3f;
++
++        if (add && lands) {
++            // an unallocated collision zone reads as CollisionFlag.NULL (blocked); a room with no
++            // blocking tiles at all must still be walkable
++            rsmod.allocateIfAbsent(dstX, dstZ, dstLevel);
++        }
++        if (lands) {
++            const flagsBySquare: Int8Array = this.decodeLandFlags(land);
++            for (let x: number = 0; x < 8; x++) {
++                for (let z: number = 0; z < 8; z++) {
++                    const flags: number = flagsBySquare[this.packCoord(localX + x, localZ + z, srcLevel)];
++                    const tx: number = dstX + GameMap.rotateZoneX(rot, x, z, 1, 1);
++                    const tz: number = dstZ + GameMap.rotateZoneZ(rot, x, z, 1, 1);
++                    if ((flags & GameMap.REMOVE_ROOFS) !== GameMap.OPEN) {
++                        changeRoofCollision(tx, tz, dstLevel, add);
++                    }
++                    // bridges (LINK_BELOW) are not carried across: no template the build copies uses them
++                    if ((flags & GameMap.BLOCK_MAP_SQUARE) === GameMap.BLOCK_MAP_SQUARE) {
++                        changeLandCollision(tx, tz, dstLevel, add);
++                    }
++                }
++            }
++        }
++
++        if (!locData) {
++            return true;
++        }
++        const zone: Zone = this.getZone(dstX, dstZ, dstLevel);
++        const packet: Packet = new Packet(locData);
++        let locId: number = -1;
++        let locIdOffset: number = packet.gsmarts();
++        while (locIdOffset !== 0) {
++            locId += locIdOffset;
++            let coord: number = 0;
++            let coordOffset: number = packet.gsmarts();
++            while (coordOffset !== 0) {
++                const { x, z, level } = this.unpackCoord((coord += coordOffset - 1));
++                const info: number = packet.g1();
++                coordOffset = packet.gsmarts();
++                if (level !== srcLevel || x < localX || x >= localX + 8 || z < localZ || z >= localZ + 8) {
++                    continue;
++                }
++                const type: LocType = LocType.get(locId);
++                if (!type || (inactiveOnly && type.active)) {
++                    continue;
++                }
++                const shape: number = info >> 2;
++                const angle: number = info & 0x3;
++                // client WorldRegion.method463/464: the footprint is measured at the loc's ORIGINAL angle
++                const odd: boolean = (angle & 0x1) === 1;
++                const sizeX: number = odd ? type.length : type.width;
++                const sizeZ: number = odd ? type.width : type.length;
++                const tx: number = dstX + GameMap.rotateZoneX(rot, x & 0x7, z & 0x7, sizeX, sizeZ);
++                const tz: number = dstZ + GameMap.rotateZoneZ(rot, x & 0x7, z & 0x7, sizeX, sizeZ);
++                const newAngle: number = (angle + rot) & 0x3;
++                if (type.blockwalk) {
++                    changeLocCollision(shape, newAngle, type.blockrange, type.length, type.width, type.active, tx, tz, dstLevel, add);
++                }
++                if (add && placeLocs && type.active) {
++                    zone.addStaticLoc(new Loc(dstLevel, tx, tz, type.width, type.length, EntityLifeCycle.RESPAWN, locId, shape, newAngle));
++                }
++            }
++            locIdOffset = packet.gsmarts();
++        }
++        return true;
++    }
++
++    /**
++     * Add (or remove) the collision of every loc currently live in a zone - static template locs,
++     * ones a script changed, and script-added ones - at their current type, shape and angle.
++     * Collision adds are ORs, so re-adding what is already there changes nothing.
++     */
++    applyLiveLocCollision(x: number, z: number, level: number, add: boolean): void {
++        for (const loc of this.getZone(x, z, level).getAllLocsSafe()) {
++            const type: LocType = LocType.get(loc.type);
++            if (type.blockwalk) {
++                changeLocCollision(loc.shape, loc.angle, type.blockrange, type.length, type.width, type.active, loc.x, loc.z, loc.level, add);
++            }
++        }
++    }
++
++    hasMapsquare(x: number, z: number): boolean {
++        return this.readRaw(`m${x >> 6}_${z >> 6}`) !== null;
++    }
++
++    /** Wipe a zone back to nothing: every loc and obj in it (static or not) and its collision. */
++    purgeZone(x: number, z: number, level: number): void {
++        this.getZone(x, z, level).purge();
++        rsmod.deallocateIfPresent(x, z, level);
++    }
++
+     private loadCsvMap(map: Set<number>, csv: string[]): void {
+         // easiest solution for the time being
+         for (let index: number = 0; index < csv.length; index++) {
+diff --git a/src/engine/InstanceMap.ts b/src/engine/InstanceMap.ts
+new file mode 100644
+index 0000000..af3b161
+--- /dev/null
++++ b/src/engine/InstanceMap.ts
+@@ -0,0 +1,207 @@
++import { changeLandCollision, isZoneAllocated } from '#/engine/GameMap.js';
++import World from '#/engine/World.js';
++
++/**
++ * Instanced regions (custom, 2026-09-11 - Construction / player-owned houses).
++ *
++ * An instance is a block of real world coordinates, far from any map square, whose zones are
++ * filled by copying 8x8 source zones ("templates") from elsewhere in the map, optionally rotated.
++ * The server holds the copy (GameMap.applyZoneTemplate: collision + locs), and players standing in it are
++ * sent REBUILD_REGION instead of REBUILD_NORMAL so the client builds the same scene from the same
++ * templates (BuildArea.rebuildNormal).
++ *
++ * Slots are INSTANCE_ZONES x INSTANCE_ZONES zones (128 x 128 tiles), laid out in a GRID x GRID
++ * block starting at (BASE_X, BASE_Z). Everything about the layout is here and nowhere else.
++ *   x 6400..10495, z 6400..10495: no map square exists there, it is outside both wilderness
++ *   rectangles (Player.isInWilderness), and every coordinate stays well inside the 14-bit coord
++ *   packing and the 2048-zone ZoneMap/collision indexing.
++ */
++export default class InstanceMap {
++    static readonly BASE_X: number = 6400;
++    static readonly BASE_Z: number = 6400;
++    static readonly INSTANCE_ZONES: number = 16;
++    static readonly GRID: number = 32;
++    private static readonly SIZE: number = InstanceMap.INSTANCE_ZONES * 8;
++
++    private static readonly instances: Map<number, Instance> = new Map();
++
++    /** The instance containing this tile, if any. */
++    static at(x: number, z: number): Instance | null {
++        const slot = InstanceMap.slotOf(x, z);
++        return slot === -1 ? null : (InstanceMap.instances.get(slot) ?? null);
++    }
++
++    static slotOf(x: number, z: number): number {
++        const sx = Math.floor((x - InstanceMap.BASE_X) / InstanceMap.SIZE);
++        const sz = Math.floor((z - InstanceMap.BASE_Z) / InstanceMap.SIZE);
++        if (sx < 0 || sz < 0 || sx >= InstanceMap.GRID || sz >= InstanceMap.GRID) {
++            return -1;
++        }
++        return sx + sz * InstanceMap.GRID;
++    }
++
++    static create(): Instance | null {
++        for (let slot = 0; slot < InstanceMap.GRID * InstanceMap.GRID; slot++) {
++            if (!InstanceMap.instances.has(slot)) {
++                const inst = new Instance(slot, InstanceMap.BASE_X + (slot % InstanceMap.GRID) * InstanceMap.SIZE, InstanceMap.BASE_Z + Math.floor(slot / InstanceMap.GRID) * InstanceMap.SIZE);
++                InstanceMap.instances.set(slot, inst);
++                return inst;
++            }
++        }
++        return null;
++    }
++
++    static delete(inst: Instance): void {
++        for (const key of Array.from(inst.templates.keys())) {
++            const { level, zx, zz } = Instance.unpackKey(key);
++            World.gameMap.purgeZone(inst.baseX + zx * 8, inst.baseZ + zz * 8, level);
++        }
++        inst.templates.clear();
++        inst.version++;
++        InstanceMap.instances.delete(inst.slot);
++    }
++
++    /** REBUILD_REGION template code for an absolute zone, or -1 (the client draws void). */
++    static templateAt(level: number, zoneX: number, zoneZ: number): number {
++        const inst = InstanceMap.at(zoneX << 3, zoneZ << 3);
++        if (!inst) {
++            return -1;
++        }
++        return inst.templates.get(Instance.packKey(level, zoneX - (inst.baseX >> 3), zoneZ - (inst.baseZ >> 3))) ?? -1;
++    }
++
++    static count(): number {
++        return InstanceMap.instances.size;
++    }
++}
++
++export class Instance {
++    readonly slot: number;
++    readonly baseX: number;
++    readonly baseZ: number;
++    /** (level, local zone) -> client template code: srcLevel << 24 | srcZoneX << 14 | srcZoneZ << 3 | rot << 1 */
++    readonly templates: Map<number, number> = new Map();
++    /** Bumped on every template change, so BuildArea knows to resend the region to players inside. */
++    version: number = 0;
++
++    constructor(slot: number, baseX: number, baseZ: number) {
++        this.slot = slot;
++        this.baseX = baseX;
++        this.baseZ = baseZ;
++    }
++
++    static packKey(level: number, zx: number, zz: number): number {
++        return ((level & 0x3) << 16) | ((zx & 0xff) << 8) | (zz & 0xff);
++    }
++
++    static unpackKey(key: number): { level: number; zx: number; zz: number } {
++        return { level: (key >> 16) & 0x3, zx: (key >> 8) & 0xff, zz: key & 0xff };
++    }
++
++    contains(x: number, z: number): boolean {
++        return InstanceMap.at(x, z) === this;
++    }
++
++    static decodeTemplate(code: number): { srcLevel: number; srcX: number; srcZ: number; rot: number } {
++        return { srcLevel: (code >> 24) & 0x3, srcX: ((code >> 14) & 0x3ff) << 3, srcZ: ((code >> 3) & 0x7ff) << 3, rot: (code >> 1) & 0x3 };
++    }
++
++    /** Lay source zone (srcX, srcZ, srcLevel) over the instance zone containing (x, z, level). */
++    setZone(x: number, z: number, level: number, srcX: number, srcZ: number, srcLevel: number, rot: number): boolean {
++        if (!this.contains(x, z) || !World.gameMap.hasMapsquare(srcX, srcZ)) {
++            return false;
++        }
++        const zx = (x - this.baseX) >> 3;
++        const zz = (z - this.baseZ) >> 3;
++        this.unapply(zx, zz, level);
++        const code = ((srcLevel & 0x3) << 24) | (((srcX >> 3) & 0x3ff) << 14) | (((srcZ >> 3) & 0x7ff) << 3) | ((rot & 0x3) << 1);
++        World.gameMap.applyZoneTemplate(srcX, srcZ, srcLevel, this.baseX + zx * 8, this.baseZ + zz * 8, level, rot, true, true, true);
++        this.templates.set(Instance.packKey(level, zx, zz), code);
++        this.restoreNeighbours(zx, zz, level);
++        this.version++;
++        return true;
++    }
++
++    clearZone(x: number, z: number, level: number): void {
++        if (!this.contains(x, z)) {
++            return;
++        }
++        const zx = (x - this.baseX) >> 3;
++        const zz = (z - this.baseZ) >> 3;
++        this.unapply(zx, zz, level);
++        this.restoreNeighbours(zx, zz, level);
++        this.version++;
++    }
++
++    /**
++     * Take a zone's collision back off - including what its walls flagged across the edge in the
++     * zones next to it - then empty it. The client never has this problem (it rebuilds the whole
++     * scene); the server edits one zone at a time, so the order matters: see restoreNeighbours.
++     */
++    private unapply(zx: number, zz: number, level: number): void {
++        const key = Instance.packKey(level, zx, zz);
++        const code = this.templates.get(key);
++        const x = this.baseX + zx * 8;
++        const z = this.baseZ + zz * 8;
++        if (code !== undefined) {
++            const t = Instance.decodeTemplate(code);
++            World.gameMap.applyZoneTemplate(t.srcX, t.srcZ, t.srcLevel, x, z, level, t.rot, false, true, false, true);
++            World.gameMap.applyLiveLocCollision(x, z, level, false);
++        }
++        World.gameMap.purgeZone(x, z, level);
++        this.templates.delete(key);
++    }
++
++    /**
++     * Put back the neighbours' collision after a zone changed: the removal above can clear a bit a
++     * neighbour also sets (two walls on one shared edge), and a freshly copied zone starts from zero,
++     * so it has lost whatever the neighbours' edge walls flagged inside it. Collision adds are ORs, so
++     * re-adding a neighbour's own tiles changes nothing. Template locs that are not `active` never
++     * reach a zone's loc list (GameMap.loadLocations does the same), so they come from the template;
++     * everything live in the zone - including hotspots a script has since turned into furniture - comes
++     * from the zone as it is now.
++     */
++    private restoreNeighbours(zx: number, zz: number, level: number): void {
++        for (let dx = -1; dx <= 1; dx++) {
++            for (let dz = -1; dz <= 1; dz++) {
++                const code = this.templates.get(Instance.packKey(level, zx + dx, zz + dz));
++                if (code === undefined || (dx === 0 && dz === 0)) {
++                    continue;
++                }
++                const x = this.baseX + (zx + dx) * 8;
++                const z = this.baseZ + (zz + dz) * 8;
++                const t = Instance.decodeTemplate(code);
++                World.gameMap.applyZoneTemplate(t.srcX, t.srcZ, t.srcLevel, x, z, level, t.rot, true, false, false, true);
++                World.gameMap.applyLiveLocCollision(x, z, level, true);
++            }
++        }
++        // last, once every edge wall is back: the restores above are what allocate empty zones
++        for (let dx = -1; dx <= 1; dx++) {
++            for (let dz = -1; dz <= 1; dz++) {
++                if (!this.templates.has(Instance.packKey(level, zx + dx, zz + dz))) {
++                    this.blockVoid(zx + dx, zz + dz, level);
++                }
++            }
++        }
++    }
++
++    /**
++     * A zone with no template is void: the client draws nothing there and its collision map treats it
++     * as blocked. An unallocated server zone reads blocked too - but a wall on the edge of the room next
++     * door flags a tile on this side, which allocates the zone with every other tile OPEN, and the
++     * server would then let a player walk out into the dark. Floor-block the whole thing instead; the
++     * next setZone here purges it anyway.
++     */
++    private blockVoid(zx: number, zz: number, level: number): void {
++        const x = this.baseX + zx * 8;
++        const z = this.baseZ + zz * 8;
++        if (!this.contains(x, z) || !isZoneAllocated(level, x, z)) {
++            return;
++        }
++        for (let tx = 0; tx < 8; tx++) {
++            for (let tz = 0; tz < 8; tz++) {
++                changeLandCollision(x + tx, z + tz, level, true);
++            }
++        }
++    }
++}
+diff --git a/src/engine/entity/BuildArea.ts b/src/engine/entity/BuildArea.ts
+index 9ee1afd..7879b09 100644
+--- a/src/engine/entity/BuildArea.ts
++++ b/src/engine/entity/BuildArea.ts
+@@ -2,7 +2,9 @@ import { CoordGrid } from '#/engine/CoordGrid.js';
+ import Player from '#/engine/entity/Player.js';
+ import World from '#/engine/World.js';
+ import ZoneMap from '#/engine/zone/ZoneMap.js';
++import InstanceMap from '#/engine/InstanceMap.js';
+ import RebuildNormal from '#/network/game/server/model/RebuildNormal.js';
++import RebuildRegion from '#/network/game/server/model/RebuildRegion.js';
+ 
+ export default class BuildArea {
+     // constructor
+@@ -12,6 +14,12 @@ export default class BuildArea {
+     readonly mapsquares: Set<number>;
+     
+     lastBuild: number = -1;
++    // Instanced regions (custom, 2026-09-11): which instance (slot) and template version the client's
++    // current scene was built from; -1 = a normal map scene. A change either way forces a rebuild, since
++    // walking in or out of an instance - or the owner laying a new room while you stand in it - has to
++    // swap the whole scene even when the player never leaves the reload bounds.
++    lastInstanceSlot: number = -1;
++    lastInstanceVersion: number = -1;
+ 
+     constructor(player: Player) {
+         this.player = player;
+@@ -22,6 +30,8 @@ export default class BuildArea {
+ 
+     clear(reconnecting: boolean): void {
+         if (!reconnecting) {
++            this.lastInstanceSlot = -1;
++            this.lastInstanceVersion = -1;
+             this.activeZones.clear();
+             this.loadedZones.clear();
+             this.mapsquares.clear();
+@@ -63,8 +73,13 @@ export default class BuildArea {
+         const reloadTopZ = (originZ + 5) << 3;
+         const reloadBottomZ = (originZ - 4) << 3;
+ 
++        const instance = InstanceMap.at(this.player.x, this.player.z);
++        const instanceSlot = instance ? instance.slot : -1;
++        const instanceVersion = instance ? instance.version : -1;
++        const instanceChanged = instanceSlot !== this.lastInstanceSlot || instanceVersion !== this.lastInstanceVersion;
++
+         // if the build area should be regenerated, do so now
+-        if (this.player.x < reloadLeftX || this.player.z < reloadBottomZ || this.player.x > reloadRightX - 1 || this.player.z > reloadTopZ - 1 || reconnect) {
++        if (this.player.x < reloadLeftX || this.player.z < reloadBottomZ || this.player.x > reloadRightX - 1 || this.player.z > reloadTopZ - 1 || reconnect || instanceChanged) {
+             const zoneX: number = CoordGrid.zone(this.player.x);
+             const zoneZ: number = CoordGrid.zone(this.player.z);
+ 
+@@ -83,7 +98,29 @@ export default class BuildArea {
+                 }
+             }
+ 
+-            this.player.write(new RebuildNormal(zoneX, zoneZ, this.mapsquares));
++            if (instance) {
++                const templates = new Int32Array(4 * 13 * 13);
++                for (let level = 0; level < 4; level++) {
++                    for (let x = 0; x < 13; x++) {
++                        for (let z = 0; z < 13; z++) {
++                            templates[(level * 13 + x) * 13 + z] = InstanceMap.templateAt(level, minX + x, minZ + z);
++                        }
++                    }
++                }
++                // The client ignores a rebuild centred on the zone it already has loaded
++                // (Client.java ptype 222/53: `if (sceneCenterZoneX == x && sceneCenterZoneZ == z &&
++                // sceneState == 2) return`), so a room laid while the player stands still would never
++                // appear. Point it at a neighbouring centre first - an empty scene it starts loading and
++                // then abandons - and the real rebuild that follows is no longer a no-op.
++                if (instanceSlot === this.lastInstanceSlot && zoneX === CoordGrid.zone(this.player.originX) && zoneZ === CoordGrid.zone(this.player.originZ)) {
++                    this.player.write(new RebuildRegion(zoneX + 1, zoneZ, new Int32Array(4 * 13 * 13).fill(-1)));
++                }
++                this.player.write(new RebuildRegion(zoneX, zoneZ, templates));
++            } else {
++                this.player.write(new RebuildNormal(zoneX, zoneZ, this.mapsquares));
++            }
++            this.lastInstanceSlot = instanceSlot;
++            this.lastInstanceVersion = instanceVersion;
+ 
+             this.player.originX = this.player.x;
+             this.player.originZ = this.player.z;
+diff --git a/src/engine/script/ScriptOpcode.ts b/src/engine/script/ScriptOpcode.ts
+index c3a4d29..1e6e5cd 100644
+--- a/src/engine/script/ScriptOpcode.ts
++++ b/src/engine/script/ScriptOpcode.ts
+@@ -65,6 +65,11 @@ export const enum ScriptOpcode {
+     MIDI_LENGTH,
+     BROADCAST_MES, // custom (Corey, 2026-09-04) - sends a game message to every online player, for the rare drop broadcast and similar server-wide notices
+     WORLD_MINUTE, // custom (Corey, 2026-09-05) - real-world minutes since 1 Jan 2025 UTC, so farming can grow crops while the player is offline and across restarts
++    INSTANCE_CREATE, // custom (2026-09-11) - instanced regions for Construction: allocate an instance, returns its base coord (InstanceMap.ts)
++    INSTANCE_SETZONE, // custom (2026-09-11) - copy a source zone (collision + locs) onto an instance zone, rotated
++    INSTANCE_CLEARZONE, // custom (2026-09-11) - empty one instance zone
++    INSTANCE_DELETE, // custom (2026-09-11) - free an instance and everything in it
++    INSTANCE_FIND, // custom (2026-09-11) - base coord of the instance containing a coord, or null
+ 
+     // Player ops (2000-2499)
+     AFK_EVENT = 2000,
+@@ -524,6 +529,11 @@ export const ScriptOpcodeMap: Map<string, number> = new Map([
+     ['MIDI_LENGTH', ScriptOpcode.MIDI_LENGTH],
+     ['BROADCAST_MES', ScriptOpcode.BROADCAST_MES],
+     ['WORLD_MINUTE', ScriptOpcode.WORLD_MINUTE],
++    ['INSTANCE_CREATE', ScriptOpcode.INSTANCE_CREATE],
++    ['INSTANCE_SETZONE', ScriptOpcode.INSTANCE_SETZONE],
++    ['INSTANCE_CLEARZONE', ScriptOpcode.INSTANCE_CLEARZONE],
++    ['INSTANCE_DELETE', ScriptOpcode.INSTANCE_DELETE],
++    ['INSTANCE_FIND', ScriptOpcode.INSTANCE_FIND],
+ 
+     ['AFK_EVENT', ScriptOpcode.AFK_EVENT],
+     ['ALLOWDESIGN', ScriptOpcode.ALLOWDESIGN],
+diff --git a/src/engine/script/handlers/ServerOps.ts b/src/engine/script/handlers/ServerOps.ts
+index 9181af8..54c4c8e 100644
+--- a/src/engine/script/handlers/ServerOps.ts
++++ b/src/engine/script/handlers/ServerOps.ts
+@@ -8,6 +8,7 @@ import { ScriptOpcode } from '#/engine/script/ScriptOpcode.js';
+ import { CommandHandlers } from '#/engine/script/ScriptRunner.js';
+ import ScriptState from '#/engine/script/ScriptState.js';
+ import { check, CoordValid, LocTypeValid, NumberPositive, SeqTypeValid, SpotAnimTypeValid, FindSquareValid } from '#/engine/script/ScriptValidators.js';
++import InstanceMap from '#/engine/InstanceMap.js';
+ import World from '#/engine/World.js';
+ import Environment from '#/util/Environment.js';
+ import Midi from '#/cache/midi/Midi.js';
+@@ -361,6 +362,49 @@ const ServerOps: CommandHandlers = {
+     [ScriptOpcode.WORLD_MINUTE]: state => {
+         const epoch = Date.UTC(2025, 0, 1);
+         state.pushInt(Math.max(0, Math.floor((Date.now() - epoch) / 60000)));
++    },
++
++    // ---- instanced regions (custom, 2026-09-11) - see engine/InstanceMap.ts ----
++
++    // instance_create()(coord): a fresh, empty instance; its south-west tile on level 0, or null.
++    [ScriptOpcode.INSTANCE_CREATE]: state => {
++        const inst = InstanceMap.create();
++        state.pushInt(inst ? CoordGrid.packCoord(0, inst.baseX, inst.baseZ) : -1);
++    },
++
++    // instance_setzone(coord $dst, coord $src, int $rot)(boolean): lay the source zone containing $src
++    // (on $src's level) over the instance zone containing $dst (on $dst's level), rotated $rot * 90
++    // degrees clockwise. False if $dst is not in an instance or $src's map square is not in the build.
++    [ScriptOpcode.INSTANCE_SETZONE]: state => {
++        const rot = state.popInt();
++        const [dst, src] = state.popInts(2);
++        const d: CoordGrid = check(dst, CoordValid);
++        const s: CoordGrid = check(src, CoordValid);
++        const inst = InstanceMap.at(d.x, d.z);
++        state.pushInt(inst && inst.setZone(d.x, d.z, d.level, s.x, s.z, s.level, rot & 0x3) ? 1 : 0);
++    },
++
++    // instance_clearzone(coord $dst): empty the instance zone containing $dst (on its level).
++    [ScriptOpcode.INSTANCE_CLEARZONE]: state => {
++        const d: CoordGrid = check(state.popInt(), CoordValid);
++        InstanceMap.at(d.x, d.z)?.clearZone(d.x, d.z, d.level);
++    },
++
++    // instance_delete(coord $coord): free the instance containing $coord. Move players out first -
++    // anyone left inside is standing on unallocated collision, which blocks every step.
++    [ScriptOpcode.INSTANCE_DELETE]: state => {
++        const c: CoordGrid = check(state.popInt(), CoordValid);
++        const inst = InstanceMap.at(c.x, c.z);
++        if (inst) {
++            InstanceMap.delete(inst);
++        }
++    },
++
++    // instance_find(coord $coord)(coord): the base coord (level 0) of the instance containing $coord, or null.
++    [ScriptOpcode.INSTANCE_FIND]: state => {
++        const c: CoordGrid = check(state.popInt(), CoordValid);
++        const inst = InstanceMap.at(c.x, c.z);
++        state.pushInt(inst ? CoordGrid.packCoord(0, inst.baseX, inst.baseZ) : -1);
+     }
+ };
+ 
+diff --git a/src/engine/zone/Zone.ts b/src/engine/zone/Zone.ts
+index 004707c..0aa1fbc 100644
+--- a/src/engine/zone/Zone.ts
++++ b/src/engine/zone/Zone.ts
+@@ -224,6 +224,31 @@ export default class Zone {
+         this.entityEvents.clear();
+     }
+ 
++    /**
++     * Instanced regions (custom, 2026-09-11): empty the zone of every loc and obj - static or
++     * dynamic - so GameMap.applyZoneTemplate can lay a different source zone over it, or an instance can be
++     * torn down. Each entity is untracked from the lifecycle queue first, so a respawn timer that was
++     * pending cannot put it back into a zone that no longer has it. Players and npcs are left alone;
++     * the caller moves them.
++     */
++    purge(): void {
++        for (const loc of Array.from(this.locs.all())) {
++            loc.setLifeCycle(-1);
++            loc.isActive = false;
++            loc.unlink();
++        }
++        for (const obj of Array.from(this.objs.all())) {
++            obj.setLifeCycle(-1);
++            obj.isActive = false;
++            obj.unlink();
++        }
++        this.locsCount = 0;
++        this.objsCount = 0;
++        this.shared = null;
++        this.events.clear();
++        this.entityEvents.clear();
++    }
++
+     // ---- static locs/objs are added during world init ----
+ 
+     addStaticLoc(loc: Loc): void {
+diff --git a/src/network/game/server/ServerGameProt.ts b/src/network/game/server/ServerGameProt.ts
+index 9ee18c6..3481bda 100644
+--- a/src/network/game/server/ServerGameProt.ts
++++ b/src/network/game/server/ServerGameProt.ts
+@@ -70,7 +70,7 @@ export default class ServerGameProt {
+ 
+     // maps
+     static readonly REBUILD_NORMAL = new ServerGameProt(222, 4);
+-    static readonly REBUILD_REGION = new ServerGameProt(53, -1);
++    static readonly REBUILD_REGION = new ServerGameProt(53, -2); // var-short: Protocol.SERVERPROT_LENGTH[53] = -2 in the client (was -1, unused until instancing)
+ 
+     // vars
+     static readonly VARP_SMALL = new ServerGameProt(182, 3);
+diff --git a/src/network/game/server/ServerGameProtRepository.ts b/src/network/game/server/ServerGameProtRepository.ts
+index 406f40f..09bcc03 100644
+--- a/src/network/game/server/ServerGameProtRepository.ts
++++ b/src/network/game/server/ServerGameProtRepository.ts
+@@ -50,6 +50,7 @@ import ObjRevealEncoder from '#/network/game/server/codec/ObjRevealEncoder.js';
+ import PCountDialogEncoder from '#/network/game/server/codec/PCountDialogEncoder.js';
+ import PlayerInfoEncoder from '#/network/game/server/codec/PlayerInfoEncoder.js';
+ import RebuildNormalEncoder from '#/network/game/server/codec/RebuildNormalEncoder.js';
++import RebuildRegionEncoder from '#/network/game/server/codec/RebuildRegionEncoder.js';
+ import ResetAnimsEncoder from '#/network/game/server/codec/ResetAnimsEncoder.js';
+ import ResetClientVarCacheEncoder from '#/network/game/server/codec/ResetClientVarCacheEncoder.js';
+ import SetMultiwayEncoder from '#/network/game/server/codec/SetMultiwayEncoder.js';
+@@ -119,6 +120,7 @@ import ObjReveal from '#/network/game/server/model/ObjReveal.js';
+ import PCountDialog from '#/network/game/server/model/PCountDialog.js';
+ import PlayerInfo from '#/network/game/server/model/PlayerInfo.js';
+ import RebuildNormal from '#/network/game/server/model/RebuildNormal.js';
++import RebuildRegion from '#/network/game/server/model/RebuildRegion.js';
+ import ResetAnims from '#/network/game/server/model/ResetAnims.js';
+ import ResetClientVarCache from '#/network/game/server/model/ResetClientVarCache.js';
+ import SetMultiway from '#/network/game/server/model/SetMultiway.js';
+@@ -218,6 +220,7 @@ class ServerGameProtRepository {
+         this.bind(PCountDialog, new PCountDialogEncoder());
+         this.bind(PlayerInfo, new PlayerInfoEncoder());
+         this.bind(RebuildNormal, new RebuildNormalEncoder());
++        this.bind(RebuildRegion, new RebuildRegionEncoder());
+         this.bind(ResetAnims, new ResetAnimsEncoder());
+         this.bind(ResetClientVarCache, new ResetClientVarCacheEncoder());
+         this.bind(SetMultiway, new SetMultiwayEncoder());
+diff --git a/src/network/game/server/codec/RebuildRegionEncoder.ts b/src/network/game/server/codec/RebuildRegionEncoder.ts
+new file mode 100644
+index 0000000..f542d10
+--- /dev/null
++++ b/src/network/game/server/codec/RebuildRegionEncoder.ts
+@@ -0,0 +1,35 @@
++import Packet from '#/io/Packet.js';
++import ServerGameMessageEncoder from '#/network/game/server/ServerGameMessageEncoder.js';
++import ServerGameProt from '#/network/game/server/ServerGameProt.js';
++import RebuildRegion from '#/network/game/server/model/RebuildRegion.js';
++
++// Mirrors Client.java's ptype 53 reader: g2_alt2 zoneX, then bit access - for each level, x, z of
++// the 13x13 scene a 1-bit "present" flag and, if set, the 26-bit template code - then byte access
++// and g2_alt2 zoneZ.
++export default class RebuildRegionEncoder extends ServerGameMessageEncoder<RebuildRegion> {
++    prot = ServerGameProt.REBUILD_REGION;
++
++    encode(buf: Packet, message: RebuildRegion): void {
++        buf.p2_alt2(message.zoneX);
++        buf.bitPos = buf.pos << 3;
++        for (let i = 0; i < 4 * 13 * 13; i++) {
++            const code = message.templates[i];
++            if (code === -1) {
++                buf.pBit(1, 0);
++            } else {
++                buf.pBit(1, 1);
++                buf.pBit(26, code);
++            }
++        }
++        buf.pos = (buf.bitPos + 7) >>> 3;
++        buf.p2_alt2(message.zoneZ);
++    }
++
++    test(message: RebuildRegion): number {
++        let bits = 0;
++        for (let i = 0; i < message.templates.length; i++) {
++            bits += message.templates[i] === -1 ? 1 : 27;
++        }
++        return 4 + ((bits + 7) >>> 3);
++    }
++}
+diff --git a/src/network/game/server/model/RebuildRegion.ts b/src/network/game/server/model/RebuildRegion.ts
+new file mode 100644
+index 0000000..df4ccae
+--- /dev/null
++++ b/src/network/game/server/model/RebuildRegion.ts
+@@ -0,0 +1,17 @@
++import ServerGameMessage from '#/network/game/server/ServerGameMessage.js';
++
++/**
++ * REBUILD_REGION: the client builds its 13x13-zone scene from copied template zones instead of the
++ * map squares under it (custom use, 2026-09-11 - instanced player-owned houses).
++ * `templates` is 4 * 13 * 13, indexed [(level * 13 + x) * 13 + z], each entry the template code
++ * (srcLevel << 24 | srcZoneX << 14 | srcZoneZ << 3 | rot << 1) or -1 for an empty zone.
++ */
++export default class RebuildRegion extends ServerGameMessage {
++    constructor(
++        readonly zoneX: number,
++        readonly zoneZ: number,
++        readonly templates: Int32Array
++    ) {
++        super();
++    }
++}
+-- 
+2.43.0
+
